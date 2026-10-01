@@ -92,6 +92,35 @@ class RuleStore private constructor(context: Context) {
 
     fun removeAllow(host: String) { customAllow = customAllow - host }
 
+    /** Admin-approved temporary allows, host -> expiry (epoch ms). Stored as "host|until". */
+    var tempAllows: Map<String, Long>
+        get() = (prefs.getStringSet(K_TEMP_ALLOW, emptySet()) ?: emptySet()).mapNotNull { e ->
+            val i = e.lastIndexOf('|')
+            val until = if (i > 0) e.substring(i + 1).toLongOrNull() else null
+            if (until == null) null else e.substring(0, i) to until
+        }.toMap()
+        set(v) = prefs.edit().putStringSet(K_TEMP_ALLOW, v.map { "${it.key}|${it.value}" }.toSet()).apply()
+
+    fun liveTempAllows(now: Long = System.currentTimeMillis()): Map<String, Long> = tempAllows.filterValues { it > now }
+
+    /** Drops expired temporary allows; the change rebuilds the matcher. Returns true if anything expired. */
+    fun pruneTempAllows(now: Long = System.currentTimeMillis()): Boolean {
+        val all = tempAllows
+        val live = all.filterValues { it > now }
+        if (live.size == all.size) return false
+        tempAllows = live
+        return true
+    }
+
+    /** Bumped when a new AI blocklist file is saved, so the matcher reloads it. */
+    var aiBlocklistVersion: Int
+        get() = prefs.getInt(K_AI_BLOCK_VERSION, 0)
+        set(v) = prefs.edit().putInt(K_AI_BLOCK_VERSION, v).apply()
+
+    var aiClassification: Boolean
+        get() = prefs.getBoolean(K_AI_CLASSIFY, true)
+        set(v) = prefs.edit().putBoolean(K_AI_CLASSIFY, v).apply()
+
     fun addKeyword(word: String): Boolean {
         val w = word.trim().lowercase(Locale.ROOT)
         if (w.length < 3 || w.any { it.isWhitespace() }) return false
@@ -243,6 +272,7 @@ class RuleStore private constructor(context: Context) {
         append(" bypassProtection=").append(bypassProtectionEnabled)
         append(" upstreamFamily=").append(upstreamFamilyFilter)
         append(" customBlock=").append(customBlock.size).append(" customAllow=").append(customAllow.size)
+        append(" tempAllow=").append(liveTempAllows().size).append(" aiBlocklistVersion=").append(aiBlocklistVersion)
         append(" pin=").append(hasPin)
         append(" listCount=").append(listDomainCount).append(" listUpdatedAt=").append(listUpdatedAt)
         append(" privateDns='").append(privateDnsHost).append('\'')
@@ -280,6 +310,9 @@ class RuleStore private constructor(context: Context) {
         const val K_TODAY_DATE = "blocked_today_date"
         const val K_PIN_HASH = "pin_hash"
         const val K_PIN_SALT = "pin_salt"
+        const val K_TEMP_ALLOW = "temp_allow"
+        const val K_AI_BLOCK_VERSION = "ai_blocklist_version"
+        const val K_AI_CLASSIFY = "ai_classification"
 
         // ---- screen filter keys ----
         const val K_SCREEN_WANTED = "screen_protection_wanted"
@@ -296,7 +329,7 @@ class RuleStore private constructor(context: Context) {
         const val K_TEXT_TOTAL = "text_covered_total"
 
         /** Keys whose change means the DNS matcher must be rebuilt. */
-        val RULE_KEYS = setOf(K_ADULT, K_KEYWORDS_ON, K_SAFESEARCH, K_YT_STRICT, K_BYPASS, K_UPSTREAM_FAMILY, K_BLOCK, K_ALLOW, K_KEYWORDS, K_LIST_UPDATED)
+        val RULE_KEYS = setOf(K_ADULT, K_KEYWORDS_ON, K_SAFESEARCH, K_YT_STRICT, K_BYPASS, K_UPSTREAM_FAMILY, K_BLOCK, K_ALLOW, K_KEYWORDS, K_LIST_UPDATED, K_TEMP_ALLOW, K_AI_BLOCK_VERSION)
 
         /** Keys whose change means the text engine must be rebuilt. */
         val SCREEN_RULE_KEYS = setOf(K_TEXT_ON, K_TEXT_TIER, K_TEXT_LOGONLY, K_TEXT_DEOBF, K_CUSTOM_MILD, K_CUSTOM_STRONG, K_CUSTOM_EXPLICIT, K_TEXT_BLOCK, K_TEXT_ALLOW, K_SAFELIST)

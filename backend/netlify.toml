@@ -1,0 +1,16 @@
+# Deployed with this folder as the base directory. Functions are TypeScript and
+# bundled by Netlify; the dashboard in public/ is plain static files.
+[build]
+  publish = "public"
+  command = "echo 'no build step'"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"

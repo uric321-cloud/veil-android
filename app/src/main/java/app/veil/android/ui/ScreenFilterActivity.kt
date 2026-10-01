@@ -214,6 +214,14 @@ class ScreenFilterActivity : Activity() {
 
     // ---- PIN gate (mirrors MainActivity) ----
     private fun withPin(change: () -> Unit, after: () -> Unit) {
+        val remote = app.veil.android.remote.RemoteStore.get(this)
+        if (remote.isPaired) {
+            AlertDialog.Builder(this).setTitle("Managed by ${remote.adminName.ifEmpty { "your admin" }}")
+                .setMessage("The screen filter's settings on this phone are set by your admin.")
+                .setPositiveButton("OK", null).show()
+            render()
+            return
+        }
         if (!store.hasPin || System.currentTimeMillis() < unlockedUntil) { change(); after(); return }
         val input = Ui.pinInput(this, "PIN")
         val wrap = Ui.vertical(this, 20f).apply { addView(input) }

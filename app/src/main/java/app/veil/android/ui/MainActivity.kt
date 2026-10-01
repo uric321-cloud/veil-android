@@ -26,6 +26,9 @@ import android.widget.Toast
 import app.veil.android.Diagnostics
 import app.veil.android.VeilApp
 import app.veil.android.VeilLog
+import app.veil.android.admin.DeviceOwner
+import app.veil.android.remote.RemoteStore
+import app.veil.android.remote.RemoteSync
 import app.veil.android.rules.BlockLog
 import app.veil.android.rules.ListSource
 import app.veil.android.rules.RuleStore
@@ -37,6 +40,7 @@ import java.util.Locale
 class MainActivity : Activity() {
 
     private lateinit var store: RuleStore
+    private lateinit var remote: RemoteStore
     private lateinit var lists: ListSource
     private lateinit var root: LinearLayout
     private lateinit var content: FrameLayout
@@ -56,6 +60,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = RuleStore.get(this)
+        remote = RemoteStore.get(this)
         lists = ListSource(this)
         BlockLog.init(this)
         buildChrome()
@@ -75,12 +80,14 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         VeilVpnService.stateListener = { render() }
+        RemoteSync.listener = { render() }
         handler.post(ticker)
     }
 
     override fun onPause() {
         super.onPause()
         VeilVpnService.stateListener = null
+        RemoteSync.listener = null
         handler.removeCallbacks(ticker)
     }
 
@@ -176,7 +183,7 @@ class MainActivity : Activity() {
         row.addView(Ui.text(c, if (running) "Protected" else "Not protected", 26f, if (running) Ui.GOOD else Ui.BAD, true).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         })
-        row.addView(Ui.pill(c, "Self mode", Ui.PRIMARY))
+        row.addView(Ui.pill(c, if (remote.isPaired) "Managed" else "Self mode", Ui.PRIMARY))
         status.addView(row)
         status.addView(Ui.caption(c, if (running)
             "Adult sites, your block list and encrypted-DNS bypasses are being filtered on every app on this phone."
@@ -189,6 +196,17 @@ class MainActivity : Activity() {
             status.addView(Ui.wideButton(c, "Turn on protection", filled = true, color = Ui.GOOD) { startProtection() })
         }
         col.addView(status)
+
+        if (remote.isPaired) {
+            val m = Ui.card(c)
+            m.addView(Ui.heading(c, "Managed by ${adminName()}"))
+            m.addView(Ui.caption(c, "${adminName()} sets VEIL's rules on this phone" +
+                (if (DeviceOwner.isOwner(c)) " and VEIL is locked in place (it can't be uninstalled or switched off)." else ".") +
+                " If a site you need is blocked, ask for it in Activity."))
+            val pending = remote.requests().count { it.status == "pending" }
+            if (pending > 0) m.addView(Ui.caption(c, "$pending request${if (pending > 1) "s" else ""} waiting for ${adminName()}."))
+            col.addView(m)
+        }
 
         val stats = Ui.card(c)
         stats.addView(Ui.heading(c, "Today"))
@@ -236,11 +254,13 @@ class MainActivity : Activity() {
             col.addView(bo)
         }
 
+        if (!remote.isPaired) {
         val ao = Ui.card(c)
         ao.addView(Ui.heading(c, "Make it harder to turn off"))
         ao.addView(Ui.caption(c, "1. Set a PIN in Settings so rules and the off switch need it.\n2. In Android's VPN settings, open VEIL and turn on Always-on VPN so it restarts by itself. Leave “Block connections without VPN” OFF: VEIL only carries DNS, and that option would cut all internet."))
         ao.addView(Ui.wideButton(c, "Open VPN settings", filled = false) { open(Intent(Settings.ACTION_VPN_SETTINGS)) })
         col.addView(ao)
+        }
 
         val tr = Ui.card(c)
         tr.addView(Ui.heading(c, "What this build can and can't do"))
@@ -328,16 +348,25 @@ class MainActivity : Activity() {
         val entries = BlockLog.snapshot()
         val head = Ui.card(c)
         head.addView(Ui.heading(c, "Recent blocks"))
-        head.addView(Ui.caption(c, if (entries.isEmpty()) "Nothing blocked yet. Blocks show up here as they happen, newest first." else "Newest first. Repeated blocks of the same site within a minute are grouped. “Allow” adds the site to your allow list."))
-        if (entries.isNotEmpty()) head.addView(Ui.wideButton(c, "Clear list", filled = false, color = Ui.MUTED) { withPin { BlockLog.clear(); render() } })
+        head.addView(Ui.caption(c, when {
+            entries.isEmpty() -> "Nothing blocked yet. Blocks show up here as they happen, newest first."
+            remote.isPaired -> "Newest first. If a site you need is blocked, tap “Ask” to ask ${adminName()} to allow it."
+            else -> "Newest first. Repeated blocks of the same site within a minute are grouped. “Allow” adds the site to your allow list."
+        }))
+        if (entries.isNotEmpty() && !remote.isPaired) head.addView(Ui.wideButton(c, "Clear list", filled = false, color = Ui.MUTED) { withPin { BlockLog.clear(); render() } })
         col.addView(head)
+        if (remote.isPaired) buildRequests(col)
         val fmt = SimpleDateFormat("EEE HH:mm", Locale.getDefault())
         val list = Ui.card(c)
         for (e in entries.take(150)) {
             val sub = "${e.reason} · ${if (e.count > 1) "${e.count}× · " else ""}${fmt.format(Date(e.lastAt))}"
-            list.addView(Ui.chipRow(c, e.host, sub, "Allow", Ui.ACCENT) {
-                withPin { if (store.addAllow(e.host)) { toast("${e.host} allowed"); render() } }
-            })
+            if (remote.isPaired) {
+                list.addView(Ui.chipRow(c, e.host, sub, "Ask", Ui.ACCENT) { askToUnblock(e.host) })
+            } else {
+                list.addView(Ui.chipRow(c, e.host, sub, "Allow", Ui.ACCENT) {
+                    withPin { if (store.addAllow(e.host)) { toast("${e.host} allowed"); render() } }
+                })
+            }
         }
         if (entries.isNotEmpty()) col.addView(list)
     }
@@ -346,6 +375,8 @@ class MainActivity : Activity() {
 
     private fun buildSettings(col: LinearLayout) {
         val c = this
+        col.addView(adminCard())
+        if (!remote.isPaired) {
         val pin = Ui.card(c)
         pin.addView(Ui.heading(c, if (store.hasPin) "PIN is set" else "No PIN"))
         pin.addView(Ui.caption(c, "With a PIN, turning protection off and changing any rule asks for it first. Give it to someone you trust if you want them to hold the key."))
@@ -356,17 +387,18 @@ class MainActivity : Activity() {
             pin.addView(Ui.wideButton(c, "Set a PIN") { setPinDialog() })
         }
         col.addView(pin)
+        }
 
         val n = Ui.card(c)
         n.addView(Ui.heading(c, "Notifications"))
-        n.addView(Ui.switchRow(c, "Notify on block", "A short notice when a site is blocked, at most once per site every 10 minutes.", store.notifyOnBlock) { v -> store.notifyOnBlock = v })
+        n.addView(Ui.switchRow(c, "Notify on block", "A short notice when a site is blocked, at most once per site every 10 minutes.", store.notifyOnBlock) { v -> gated({ store.notifyOnBlock = v }, { render() }) })
         col.addView(n)
 
         val lists = Ui.card(c)
         lists.addView(Ui.heading(c, "Adult content list"))
         val when_ = if (store.listUpdatedAt > 0) "Updated ${DateUtils.getRelativeTimeSpanString(store.listUpdatedAt)}" else "Using the list bundled with this build"
         lists.addView(Ui.caption(c, "$when_ · ${formatCount(store.listDomainCount.takeIf { it > 0 } ?: 47663)} domains. Updates download the two public lists this build is made from and merge them."))
-        lists.addView(Ui.wideButton(c, "Update list now", filled = false) { updateLists() })
+        if (!remote.isPaired) lists.addView(Ui.wideButton(c, "Update list now", filled = false) { updateLists() })
         col.addView(lists)
 
         val d = Ui.card(c)
@@ -381,7 +413,8 @@ class MainActivity : Activity() {
 
         val about = Ui.card(c)
         about.addView(Ui.heading(c, "About"))
-        about.addView(Ui.caption(c, "VEIL ${app.veil.android.BuildConfig.VERSION_NAME} · build one: DNS filtering. Everything runs on this phone; VEIL sends no browsing data anywhere. Allowed lookups go to Cloudflare (1.1.1.1) or Cloudflare for Families (1.1.1.3), and to Quad9 as a fallback."))
+        about.addView(Ui.caption(c, "VEIL ${app.veil.android.BuildConfig.VERSION_NAME}. Filtering runs on this phone. Allowed lookups go to Cloudflare (1.1.1.1) or Cloudflare for Families (1.1.1.3), and to Quad9 as a fallback." +
+            if (remote.isPaired) " While paired, VEIL also reports to your admin as described under “Managed by”." else " Unpaired, VEIL sends no browsing data anywhere."))
         col.addView(about)
     }
 
@@ -440,10 +473,123 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    // ------------------------------------------------------------------ admin / managed mode
+
+    private fun adminName(): String = remote.adminName.ifEmpty { "your admin" }
+
+    private fun managedNotice() {
+        AlertDialog.Builder(this)
+            .setTitle("Managed by ${adminName()}")
+            .setMessage("VEIL's settings on this phone are set by ${adminName()}. To get a blocked site allowed, open Activity and tap “Ask”.")
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun adminCard(): View {
+        val c = this
+        val card = Ui.card(c)
+        if (!remote.isPaired) {
+            card.addView(Ui.heading(c, "Pair with an admin"))
+            card.addView(Ui.caption(c, "Let a parent, partner or accountability helper manage VEIL from their dashboard. They'll set the rules, see what VEIL blocked and get alerts if protection is switched off. You'll need the server address and the pairing code from their dashboard."))
+            card.addView(Ui.wideButton(c, "Pair with an admin") { pairDialog() })
+            return card
+        }
+        card.addView(Ui.heading(c, "Managed by ${adminName()}"))
+        val last = if (remote.lastSyncAt > 0) "Last check-in ${DateUtils.getRelativeTimeSpanString(remote.lastSyncAt)}" else "Not checked in yet"
+        card.addView(Ui.caption(c, "$last · ${remote.server.removePrefix("https://")}" + if (DeviceOwner.isOwner(c)) " · Device Owner lockdown active" else ""))
+        if (remote.lastSyncError.isNotEmpty()) card.addView(Ui.text(c, remote.lastSyncError, 13f, Ui.WARN))
+        card.addView(Ui.space(c, 6f))
+        card.addView(Ui.text(c, "What ${adminName()} can see", 14f, Ui.TEXT, true))
+        card.addView(Ui.caption(c, "• VEIL's settings and whether protection and the screen filter are on\n" +
+            "• Sites VEIL blocked, and how many words it covered on screen\n" +
+            "• Alerts when protection, the screen filter or Private DNS is changed\n" +
+            "• Your unblock requests and reasons\n" +
+            (if (store.aiClassification) "• Names of sites no block list covers, for AI classification (not stored against this phone)\n" else "") +
+            "\nNot your messages, photos, passwords or the content of pages, and nothing from other apps. ${adminName()} controls only VEIL."))
+        card.addView(Ui.space(c, 6f))
+        card.addView(Ui.wideButton(c, "Check in now", filled = false) { RemoteSync.syncNow(c); toast("Checking in…") })
+        card.addView(Ui.wideButton(c, "Recovery code", filled = false, color = Ui.MUTED) { recoveryDialog() })
+        return card
+    }
+
+    private fun pairDialog() {
+        val server = Ui.input(this, "Server, e.g. veil-admin.netlify.app")
+        val code = Ui.input(this, "Pairing code, e.g. ABCD-2345")
+        val wrap = Ui.vertical(this, 20f).apply { addView(server); addView(Ui.space(this@MainActivity, 8f)); addView(code) }
+        AlertDialog.Builder(this)
+            .setTitle("Pair with an admin")
+            .setMessage("Once paired, only your admin can change VEIL's settings. You can always see what they can see under Settings.")
+            .setView(wrap)
+            .setPositiveButton("Pair") { _, _ ->
+                toast("Pairing…")
+                RemoteSync.pair(this, server.text.toString(), code.text.toString()) { err ->
+                    handler.post { toast(err ?: "Paired with ${adminName()}"); render() }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun recoveryDialog() {
+        val input = Ui.pinInput(this, "8-digit recovery code")
+        val wrap = Ui.vertical(this, 20f).apply { addView(input) }
+        AlertDialog.Builder(this)
+            .setTitle("Recovery code")
+            .setMessage("Only for emergencies, such as the admin's server being gone. The code removes all of VEIL's lockdown and unpairs this phone. ${adminName()} is told when it's used, and when a wrong code is tried.")
+            .setView(wrap)
+            .setPositiveButton("Release") { _, _ ->
+                when (val r = RemoteSync.recover(this, input.text.toString())) {
+                    is RemoteSync.RecoveryResult.Released -> toast("Releasing VEIL…")
+                    is RemoteSync.RecoveryResult.Wrong -> toast("Wrong code. ${r.attemptsLeft} tries left.")
+                    is RemoteSync.RecoveryResult.Locked -> toast("Too many wrong codes. Try again ${DateUtils.getRelativeTimeSpanString(r.until)}.")
+                }
+                handler.postDelayed({ render() }, 1500)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun askToUnblock(host: String) {
+        val reason = Ui.input(this, "Why do you need it? (optional)", singleLine = false)
+        val wrap = Ui.vertical(this, 20f).apply { addView(reason) }
+        AlertDialog.Builder(this)
+            .setTitle("Ask to allow $host")
+            .setMessage("${adminName()} gets your request and decides. You'll get a notification with the answer.")
+            .setView(wrap)
+            .setPositiveButton("Send") { _, _ ->
+                if (RemoteSync.requestUnblock(this, host, reason.text.toString())) toast("Request sent to ${adminName()}") else toast("Couldn't create the request")
+                render()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun buildRequests(col: LinearLayout) {
+        val c = this
+        val reqs = remote.requests().take(20)
+        if (reqs.isEmpty()) return
+        val card = Ui.card(c)
+        card.addView(Ui.heading(c, "Your requests"))
+        val fmt = SimpleDateFormat("EEE HH:mm", Locale.getDefault())
+        val now = System.currentTimeMillis()
+        for (r in reqs) {
+            val state = when {
+                r.status == "pending" -> if (r.sent) "Waiting for ${adminName()}" else "Sending…"
+                r.status == "approved" && r.until == 0L -> "Always allowed"
+                r.status == "approved" && r.until > now -> "Allowed until ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(r.until))}"
+                r.status == "approved" -> "Allowance ended"
+                else -> "Declined" + if (r.note.isNotEmpty()) ": ${r.note}" else ""
+            }
+            card.addView(Ui.chipRow(c, r.host, "$state · ${fmt.format(Date(r.at))}", "", Ui.MUTED) {})
+        }
+        col.addView(card)
+    }
+
     // ------------------------------------------------------------------ PIN
 
     /** Runs [action] after a PIN check when a PIN is set (cached for five minutes). */
     private fun withPin(action: () -> Unit) {
+        if (remote.isPaired) { managedNotice(); render(); return }
         if (!store.hasPin || System.currentTimeMillis() < unlockedUntil) { action(); return }
         val input = Ui.pinInput(this, "PIN")
         val wrap = Ui.vertical(this, 20f).apply { addView(input) }
