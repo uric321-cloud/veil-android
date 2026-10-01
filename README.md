@@ -1,4 +1,4 @@
-# VEIL for Android — build one
+# VEIL for Android
 
 A content filter for Android that blocks adult sites, your own block list and
 encrypted-DNS bypass tricks in every app on the phone, and forces SafeSearch on
@@ -14,7 +14,66 @@ SafeSearch names get the safe endpoint's addresses, everything else is forwarded
 to Cloudflare or Quad9 through a socket that bypasses the tunnel. Traffic to
 well-known public resolvers (Google DNS, Cloudflare, Quad9, NextDNS, ...) is
 pulled into the tunnel and refused, so browsers' "secure DNS" cannot route
-around the filter. Everything runs on the phone; the app has no server.
+around the filter. Filtering runs on the phone. Unpaired ("self mode") the app
+talks to no server; paired with an admin it checks in with the admin backend
+described below.
+
+## Admin backend and managed phones
+
+`backend/` is the admin side: a Netlify site (Functions + Blobs) that serves the
+dashboard and the API phones check in with. One admin account manages any
+number of phones.
+
+- **Pairing.** The admin clicks *Add a phone* and gets a single-use code (30
+  minutes). Either set up a factory-reset phone with the QR code (full
+  lockdown, below) or enter the server and code under *Settings → Pair with an
+  admin* on a phone that already has VEIL.
+- **Check-ins.** About once a minute the phone sends its status, what VEIL
+  blocked, tamper alerts and unblock requests, and receives settings changes,
+  request decisions, commands and the shared AI blocklist. A paired phone's
+  settings are read-only; *Activity → Ask* sends an unblock request instead.
+- **What the admin can see** (also listed on the phone under *Settings*): VEIL's
+  settings and status, sites VEIL blocked, words covered on screen (counts),
+  tamper alerts, unblock requests, and - if *AI site classification* is on -
+  the names of sites no list covers, which are classified but not stored
+  against the phone. Never messages, photos, page content or other apps' data.
+- **Device Owner lockdown.** Set up from the QR code on the first Welcome screen
+  of a factory-reset phone (tap six times), or with
+  `adb shell dpm set-device-owner app.veil.android/.admin.VeilDeviceAdmin`.
+  VEIL then can't be uninstalled, runs as always-on VPN and applies the admin's
+  chosen restrictions (VPN and Private DNS settings, Safe Mode, factory reset,
+  extra users, and optionally app control, unknown sources and debugging).
+  The QR code downloads `releases/latest/download/VEIL.apk`, which CI publishes
+  from `main` only.
+- **Getting out.** The admin's *Release phone* removes every restriction and
+  Device Owner. The 8-digit recovery code shown once at pairing does the same
+  on the phone with no server needed (5 tries, then a 30-minute lock; the admin
+  is alerted).
+- **AI (Claude).** With `ANTHROPIC_API_KEY` set on the Netlify site: a review
+  and recommendation on every unblock request, classification of sites no list
+  covers (confident adult/bypass results are added to a shared blocklist), daily
+  reports at 06:00 UTC plus on-demand 7/30-day reports, and a per-phone
+  assistant that can propose settings changes the admin applies with a button.
+  Every change, from the dashboard or the assistant, goes through the same
+  validation (`backend/netlify/lib/config.ts`).
+
+### Running the backend
+
+| Setting (Netlify environment variables) | Purpose |
+|---|---|
+| `ANTHROPIC_API_KEY` | Turns on the AI features. Without it everything else works. |
+| `ADMIN_SIGNUP_CODE` | Lets more admins sign up. Without it only the first account can be created. |
+| `VEIL_APK_URL`, `VEIL_SIGNATURE_CHECKSUM` | Override the APK and signing-certificate checksum in the QR code (defaults: latest release, test key). |
+
+Deploys: CI deploys `backend/` from `main` once the repository has a
+`NETLIFY_AUTH_TOKEN` secret (site id defaults to the `veil-admin` site; override
+with a `NETLIFY_SITE_ID` repository variable). Locally:
+
+```
+cd backend && npm ci
+npm test                                                  # API + AI tests (fake model)
+VEIL_FAKE_AI=1 node --experimental-strip-types test/dev-server.ts   # dashboard on :8888
+```
 
 ## Getting a build
 
@@ -90,5 +149,6 @@ into `~/.cache/veil-localcheck` (override with `VEIL_TOOLS`).
 
 Build two: browser address-bar reading (Accessibility) for URL-level rules and
 an in-page block screen, unsupported-browser blocking, tamper guarding.
-Build three: request-to-approve flow with a key-holder app and web dashboard.
+Build three (done in 0.2.0): admin dashboard, request-to-approve, remote settings,
+tamper alerts, Device Owner lockdown, AI review and reports.
 Build four: on-device image filtering (Android 17 ContentSafetyManager, LiteRT fallback).
