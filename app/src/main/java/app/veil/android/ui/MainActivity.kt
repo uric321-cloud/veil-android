@@ -199,6 +199,19 @@ class MainActivity : Activity() {
         stats.addView(srow)
         col.addView(stats)
 
+        val screen = Ui.card(c)
+        val srow2 = Ui.horizontal(c)
+        srow2.addView(Ui.text(c, "Screen filter", 16f, Ui.TEXT, true).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        srow2.addView(Ui.pill(c, if (store.screenProtectionWanted) "On" else "Off", if (store.screenProtectionWanted) Ui.GOOD else Ui.MUTED))
+        screen.addView(srow2)
+        screen.addView(Ui.caption(c, "Covers inappropriate text in any app, blurred or struck through in place. (Stage 1 — text; images come next.)"))
+        screen.addView(Ui.wideButton(c, "Open screen filter", filled = !store.screenProtectionWanted) {
+            startActivity(Intent(c, ScreenFilterActivity::class.java))
+        })
+        col.addView(screen)
+
         if (store.privateDnsHost.isNotEmpty()) {
             val warn = Ui.card(c)
             warn.addView(Ui.text(c, "Private DNS is turned on", 16f, Ui.WARN, true))

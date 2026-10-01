@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">VEIL</string>
+    <string name="accessibility_desc">VEIL uses accessibility to read on-screen text so it can cover inappropriate words in any app. Text is checked on your phone and is never sent anywhere.</string>
 </resources>

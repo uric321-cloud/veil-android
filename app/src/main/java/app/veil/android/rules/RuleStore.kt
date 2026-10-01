@@ -2,6 +2,8 @@ package app.veil.android.rules
 
 import android.content.Context
 import android.content.SharedPreferences
+import app.veil.android.screen.Severity
+import app.veil.android.screen.TextAction
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.text.SimpleDateFormat
@@ -99,6 +101,85 @@ class RuleStore private constructor(context: Context) {
 
     fun removeKeyword(word: String) { keywords = keywords - word }
 
+    // ---- screen filter (Stage 1: text redaction) ----
+    var screenProtectionWanted: Boolean
+        get() = prefs.getBoolean(K_SCREEN_WANTED, false)
+        set(v) = prefs.edit().putBoolean(K_SCREEN_WANTED, v).apply()
+
+    var textEnabled: Boolean
+        get() = prefs.getBoolean(K_TEXT_ON, true)
+        set(v) = prefs.edit().putBoolean(K_TEXT_ON, v).apply()
+
+    /** One of Tiers.YOUNG_CHILD / CHILD / TEEN / ADULT / CUSTOM. */
+    var textTier: String
+        get() = prefs.getString(K_TEXT_TIER, "child") ?: "child"
+        set(v) = prefs.edit().putString(K_TEXT_TIER, v).apply()
+
+    var textWarnLogOnly: Boolean
+        get() = prefs.getBoolean(K_TEXT_LOGONLY, false)
+        set(v) = prefs.edit().putBoolean(K_TEXT_LOGONLY, v).apply()
+
+    var textDeobfuscate: Boolean
+        get() = prefs.getBoolean(K_TEXT_DEOBF, false)
+        set(v) = prefs.edit().putBoolean(K_TEXT_DEOBF, v).apply()
+
+    // Custom-tier action per severity, stored as action names ("strike"/"bar"/"frost"/"ignore").
+    var customMild: String
+        get() = prefs.getString(K_CUSTOM_MILD, "ignore") ?: "ignore"
+        set(v) = prefs.edit().putString(K_CUSTOM_MILD, v).apply()
+    var customStrong: String
+        get() = prefs.getString(K_CUSTOM_STRONG, "strike") ?: "strike"
+        set(v) = prefs.edit().putString(K_CUSTOM_STRONG, v).apply()
+    var customExplicit: String
+        get() = prefs.getString(K_CUSTOM_EXPLICIT, "bar") ?: "bar"
+        set(v) = prefs.edit().putString(K_CUSTOM_EXPLICIT, v).apply()
+
+    fun customTierActions(): Map<Severity, TextAction> = mapOf(
+        Severity.MILD to actionFromName(customMild),
+        Severity.STRONG to actionFromName(customStrong),
+        Severity.EXPLICIT to actionFromName(customExplicit)
+    )
+
+    var textBlockWords: Set<String>
+        get() = prefs.getStringSet(K_TEXT_BLOCK, emptySet())?.toSet() ?: emptySet()
+        set(v) = prefs.edit().putStringSet(K_TEXT_BLOCK, v.toSet()).apply()
+
+    var textAllowWords: Set<String>
+        get() = prefs.getStringSet(K_TEXT_ALLOW, emptySet())?.toSet() ?: emptySet()
+        set(v) = prefs.edit().putStringSet(K_TEXT_ALLOW, v.toSet()).apply()
+
+    fun addTextBlockWord(w: String): Boolean {
+        val n = w.trim().lowercase(Locale.ROOT)
+        if (n.length < 2 || n.any { it.isWhitespace() }) return false
+        textBlockWords = textBlockWords + n; textAllowWords = textAllowWords - n; return true
+    }
+    fun removeTextBlockWord(w: String) { textBlockWords = textBlockWords - w }
+    fun addTextAllowWord(w: String): Boolean {
+        val n = w.trim().lowercase(Locale.ROOT)
+        if (n.length < 2 || n.any { it.isWhitespace() }) return false
+        textAllowWords = textAllowWords + n; textBlockWords = textBlockWords - n; return true
+    }
+    fun removeTextAllowWord(w: String) { textAllowWords = textAllowWords - w }
+
+    /** Packages the screen filter skips entirely (first cheap gate). */
+    var safeListApps: Set<String>
+        get() = prefs.getStringSet(K_SAFELIST, DEFAULT_SAFELIST)?.toSet() ?: DEFAULT_SAFELIST
+        set(v) = prefs.edit().putStringSet(K_SAFELIST, v.toSet()).apply()
+
+    val textCoveredTotal: Long get() = prefs.getLong(K_TEXT_TOTAL, 0)
+    fun countTextCovered(n: Int) {
+        if (n <= 0) return
+        prefs.edit().putLong(K_TEXT_TOTAL, prefs.getLong(K_TEXT_TOTAL, 0) + n).apply()
+    }
+
+    private fun actionFromName(name: String): TextAction = when (name.lowercase()) {
+        "strike" -> TextAction.STRIKE
+        "bar" -> TextAction.BAR
+        "frost" -> TextAction.FROST
+        "ignore" -> TextAction.IGNORE
+        else -> TextAction.BAR
+    }
+
     // ---- list update metadata ----
     var listUpdatedAt: Long
         get() = prefs.getLong(K_LIST_UPDATED, 0)
@@ -166,6 +247,11 @@ class RuleStore private constructor(context: Context) {
         append(" listCount=").append(listDomainCount).append(" listUpdatedAt=").append(listUpdatedAt)
         append(" privateDns='").append(privateDnsHost).append('\'')
         append(" blockedToday=").append(blockedToday).append(" blockedTotal=").append(blockedTotal)
+        append(" | screen=").append(screenProtectionWanted).append(" text=").append(textEnabled)
+        append(" tier=").append(textTier).append(" logOnly=").append(textWarnLogOnly)
+        append(" deobf=").append(textDeobfuscate)
+        append(" textBlock=").append(textBlockWords.size).append(" textAllow=").append(textAllowWords.size)
+        append(" safeList=").append(safeListApps.size).append(" textCovered=").append(textCoveredTotal)
     }
 
     companion object {
@@ -195,8 +281,36 @@ class RuleStore private constructor(context: Context) {
         const val K_PIN_HASH = "pin_hash"
         const val K_PIN_SALT = "pin_salt"
 
-        /** Keys whose change means the matcher must be rebuilt. */
+        // ---- screen filter keys ----
+        const val K_SCREEN_WANTED = "screen_protection_wanted"
+        const val K_TEXT_ON = "text_enabled"
+        const val K_TEXT_TIER = "text_tier"
+        const val K_TEXT_LOGONLY = "text_warn_log_only"
+        const val K_TEXT_DEOBF = "text_deobfuscate"
+        const val K_CUSTOM_MILD = "text_custom_mild"
+        const val K_CUSTOM_STRONG = "text_custom_strong"
+        const val K_CUSTOM_EXPLICIT = "text_custom_explicit"
+        const val K_TEXT_BLOCK = "text_block_words"
+        const val K_TEXT_ALLOW = "text_allow_words"
+        const val K_SAFELIST = "safe_list_apps"
+        const val K_TEXT_TOTAL = "text_covered_total"
+
+        /** Keys whose change means the DNS matcher must be rebuilt. */
         val RULE_KEYS = setOf(K_ADULT, K_KEYWORDS_ON, K_SAFESEARCH, K_YT_STRICT, K_BYPASS, K_UPSTREAM_FAMILY, K_BLOCK, K_ALLOW, K_KEYWORDS, K_LIST_UPDATED)
+
+        /** Keys whose change means the text engine must be rebuilt. */
+        val SCREEN_RULE_KEYS = setOf(K_TEXT_ON, K_TEXT_TIER, K_TEXT_LOGONLY, K_TEXT_DEOBF, K_CUSTOM_MILD, K_CUSTOM_STRONG, K_CUSTOM_EXPLICIT, K_TEXT_BLOCK, K_TEXT_ALLOW, K_SAFELIST)
+
+        /** Apps never scanned: VEIL itself plus common safe system apps. */
+        val DEFAULT_SAFELIST: Set<String> = setOf(
+            "app.veil.android",
+            "com.android.systemui",
+            "com.android.settings",
+            "com.android.dialer",
+            "com.google.android.dialer",
+            "com.android.deskclock",
+            "com.google.android.deskclock"
+        )
 
         val DEFAULT_KEYWORDS: Set<String> = setOf(
             "porn", "xxx", "hentai", "xvideos", "xnxx", "xhamster", "redtube", "youporn",

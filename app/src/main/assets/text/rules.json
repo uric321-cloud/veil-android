@@ -1,0 +1,50 @@
+[
+  {
+    "category": "profanity",
+    "severity": "mild",
+    "terms": ["damn", "hell", "crap", "bloody", "arse", "bugger", "piss", "pissed", "jackass", "douche", "douchebag"],
+    "phrases": ["what the hell"]
+  },
+  {
+    "category": "profanity",
+    "severity": "strong",
+    "terms": ["fuck", "fucker", "fucking", "fucked", "motherfucker", "shit", "shitty", "bullshit", "bitch", "bastard", "asshole", "dick", "dickhead", "prick", "wanker", "twat", "bollocks"],
+    "phrases": ["son of a bitch", "piece of shit"]
+  },
+  {
+    "category": "sexual",
+    "severity": "strong",
+    "terms": ["sexy", "horny", "nude", "nudes", "naked", "boobs", "boob", "tits", "titties", "ass", "butt", "thicc", "milf", "thirsty"],
+    "phrases": ["send nudes", "hook up", "netflix and chill"]
+  },
+  {
+    "category": "sexual",
+    "severity": "explicit",
+    "terms": ["porn", "porno", "pornhub", "xxx", "xvideos", "xnxx", "xhamster", "hentai", "onlyfans", "nsfw", "cum", "cumming", "blowjob", "handjob", "anal", "dildo", "pussy", "cock", "cocks", "penis", "vagina", "orgasm", "masturbate", "masturbation", "deepthroat", "creampie", "gangbang", "camgirl", "chaturbate", "rule34", "nhentai"],
+    "phrases": ["give head", "eat you out", "suck my", "sex tape"]
+  },
+  {
+    "category": "slurs",
+    "severity": "explicit",
+    "terms": ["retard", "retarded", "faggot", "fag", "dyke", "tranny", "spic", "chink", "kike", "wetback", "coon"],
+    "phrases": []
+  },
+  {
+    "category": "selfharm",
+    "severity": "strong",
+    "terms": ["suicide", "selfharm", "cutting", "anorexia", "bulimia", "proana", "promia"],
+    "phrases": ["kill myself", "kill yourself", "end my life", "want to die", "cut myself", "hurt myself"]
+  },
+  {
+    "category": "violence",
+    "severity": "mild",
+    "terms": ["kill", "murder", "stab", "shoot", "gun", "knife"],
+    "phrases": []
+  },
+  {
+    "category": "violence",
+    "severity": "strong",
+    "terms": ["rape", "molest", "behead"],
+    "phrases": ["shoot up", "bomb the", "how to make a bomb"]
+  }
+]
