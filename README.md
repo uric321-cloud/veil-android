@@ -76,6 +76,16 @@ checksums, rule matching, live resolver forwarding). They were used to verify
 build one before the first CI run. A normal Android Studio setup does not need
 them.
 
+To run the engine tests with only a JDK (17+), `curl` and `unzip`:
+
+```
+.localcheck/run-tests.sh          # EngineTest + TextEngineTest, exits 1 on any failure
+.localcheck/run-tests.sh --live   # also UpstreamTest: real DNS lookups, read the output
+```
+
+The first run downloads the Kotlin compiler and a compile-time `android.jar`
+into `~/.cache/veil-localcheck` (override with `VEIL_TOOLS`).
+
 ## Roadmap
 
 Build two: browser address-bar reading (Accessibility) for URL-level rules and
