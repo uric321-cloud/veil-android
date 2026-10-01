@@ -11,6 +11,23 @@ permissions:
   contents: write
 
 jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -45,6 +62,8 @@ jobs:
           VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
           FILE="VEIL-${VERSION}-build${{ github.run_number }}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$FILE"
+          # Stable name for Device Owner QR provisioning: releases/latest/download/VEIL.apk
+          cp app/build/outputs/apk/release/app-release.apk VEIL.apk
           echo "file=$FILE" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -62,4 +81,8 @@ jobs:
           body: |
             Test build ${{ github.run_number }} from commit ${{ github.sha }}.
             Download the .apk below on your Android phone and open it to install.
-          files: ${{ steps.name.outputs.file }}
+          # Branch builds are pre-releases, so "latest" (used by QR provisioning) is always a main build.
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          files: |
+            ${{ steps.name.outputs.file }}
+            VEIL.apk

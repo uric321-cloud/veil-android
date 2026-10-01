@@ -15,6 +15,9 @@ class VeilApp : Application() {
         installCrashHandler()
         createNotificationChannels()
         VeilLog.i("VEIL ${BuildConfig.VERSION_NAME} starting on ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE}")
+        // Re-assert Device Owner lockdown (no-op otherwise) and resume admin check-ins.
+        app.veil.android.admin.DeviceOwner.applyBaseline(this)
+        app.veil.android.remote.RemoteSync.start(this)
     }
 
     /** Writes any uncaught exception to a file so the next launch can offer to share it. */

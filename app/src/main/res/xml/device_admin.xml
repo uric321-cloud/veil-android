@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No legacy device-admin policies are needed: everything VEIL does as Device
+     Owner uses DevicePolicyManager calls that Device Owner may make directly. -->
+<device-admin>
+    <uses-policies />
+</device-admin>
