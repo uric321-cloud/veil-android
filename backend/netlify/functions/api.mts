@@ -44,7 +44,8 @@ async function requireAdmin(req: Request): Promise<Admin> {
 function provisioning() {
   return {
     apkUrl: env("VEIL_APK_URL") ?? "https://github.com/uric321-cloud/veil-android/releases/latest/download/VEIL.apk",
-    signatureChecksum: env("VEIL_SIGNATURE_CHECKSUM") ?? "",
+    // SHA-256 of the signing certificate in keystore/veil-test.jks (base64url).
+    signatureChecksum: env("VEIL_SIGNATURE_CHECKSUM") ?? "ziTwy4yi4d7sU3b4W9g1rEwFV4_hA9qPXjs_O2AGnew",
   };
 }
 
