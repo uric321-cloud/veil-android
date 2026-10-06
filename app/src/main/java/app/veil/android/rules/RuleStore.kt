@@ -210,10 +210,15 @@ class RuleStore private constructor(context: Context) {
         get() = prefs.getBoolean(K_IMAGE_ON, true)
         set(v) = prefs.edit().putBoolean(K_IMAGE_ON, v).apply()
 
-    /** "low" (only clearly explicit), "medium", "high" (also suggestive). */
+    /** "low" (only clearly explicit), "medium", "high" (also suggestive), "max" (fail-closed). */
     var imageStrictness: String
         get() = prefs.getString(K_IMAGE_STRICT, "medium") ?: "medium"
         set(v) = prefs.edit().putString(K_IMAGE_STRICT, v).apply()
+
+    /** Cancel incoming notifications whose text contains blocked words. */
+    var notificationFilter: Boolean
+        get() = prefs.getBoolean(K_NOTIF_ON, true)
+        set(v) = prefs.edit().putBoolean(K_NOTIF_ON, v).apply()
 
     val imagesCoveredTotal: Long get() = prefs.getLong(K_IMAGE_TOTAL, 0)
     fun countImagesCovered(n: Int) {
@@ -358,6 +363,7 @@ class RuleStore private constructor(context: Context) {
         const val K_SAFELIST = "safe_list_apps"
         const val K_TEXT_TOTAL = "text_covered_total"
         const val K_IMAGE_ON = "image_filter"
+        const val K_NOTIF_ON = "notification_filter"
         const val K_IMAGE_STRICT = "image_strictness"
         const val K_IMAGE_TOTAL = "images_covered_total"
 
@@ -365,7 +371,7 @@ class RuleStore private constructor(context: Context) {
         val RULE_KEYS = setOf(K_ADULT, K_KEYWORDS_ON, K_SAFESEARCH, K_YT_STRICT, K_BYPASS, K_UPSTREAM_FAMILY, K_BLOCK, K_ALLOW, K_KEYWORDS, K_LIST_UPDATED, K_TEMP_ALLOW, K_AI_BLOCK_VERSION, K_WEB_ALLOWLIST, K_AI_ALLOW_SAFE)
 
         /** Keys whose change means the text engine must be rebuilt. */
-        val SCREEN_RULE_KEYS = setOf(K_TEXT_ON, K_TEXT_TIER, K_TEXT_LOGONLY, K_TEXT_DEOBF, K_CUSTOM_MILD, K_CUSTOM_STRONG, K_CUSTOM_EXPLICIT, K_TEXT_BLOCK, K_TEXT_ALLOW, K_SAFELIST, K_IMAGE_ON, K_IMAGE_STRICT)
+        val SCREEN_RULE_KEYS = setOf(K_TEXT_ON, K_TEXT_TIER, K_TEXT_LOGONLY, K_TEXT_DEOBF, K_CUSTOM_MILD, K_CUSTOM_STRONG, K_CUSTOM_EXPLICIT, K_TEXT_BLOCK, K_TEXT_ALLOW, K_SAFELIST, K_IMAGE_ON, K_IMAGE_STRICT, K_NOTIF_ON)
 
         /** Apps never scanned: VEIL itself plus common safe system apps. */
         val DEFAULT_SAFELIST: Set<String> = setOf(

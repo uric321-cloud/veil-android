@@ -90,6 +90,12 @@ number of phones.
   Discover feed and more, or add custom rules. Rules live in
   `backend/netlify/lib/inapp.ts` and reach phones on check-in, so they can be
   fixed when an app changes without shipping a new APK.
+- **Notification filtering**: a notification-listener service cancels an incoming
+  notification whose text contains a blocked word (same text engine and rules as
+  the screen filter), so a flagged message never shows in the shade or as a
+  banner - the one place on-screen covering can't catch in time. On by default for
+  managed phones; the user grants notification access once (separate from
+  accessibility). Toggle: *Screen filter → Block notifications with bad words*.
 - **Filter levels**: Open, Standard, Strict, Allowed sites only. In allowed-sites-
   only mode, sites the AI is confident are education, government, banking,
   health or app infrastructure open on their own.

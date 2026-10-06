@@ -74,6 +74,18 @@
                 android:value="child_monitoring" />
         </service>
 
+        <!-- Cancels incoming notifications that contain blocked words. Needs the
+             user to grant notification access (BIND_NOTIFICATION_LISTENER_SERVICE). -->
+        <service
+            android:name=".screen.VeilNotificationFilter"
+            android:exported="false"
+            android:label="VEIL notification filter"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- The DNS-filtering VPN. systemExempted is the foreground-service type
              Android 14+ allows for VpnService implementations. -->
         <service
