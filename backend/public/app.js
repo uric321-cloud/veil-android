@@ -138,6 +138,7 @@ async function boot() {
   state.firstRun = !!s.firstRun;
   state.signupOpen = !!s.signupOpen;
   state.aiConfigured = !!s.aiConfigured;
+  state.billing = s.billing || { configured: false, plans: [], subscription: { status: "none" } };
   window.addEventListener("hashchange", route);
   route();
 }
@@ -306,7 +307,48 @@ async function renderDevices() {
   });
   const team = h("section", { class: "card stack", style: "margin-top:16px" }, h("h2", {}, "Team (co-admins)"));
   renderTeam(team);
-  fill($app(), head, banner, data.devices.length ? h("div", {}, search, grid) : empty, team);
+  const billing = h("section", { class: "card stack", style: "margin-top:16px" }, h("h2", {}, "Subscription"));
+  renderBilling(billing);
+  fill($app(), head, banner, data.devices.length ? h("div", {}, search, grid) : empty, billing, team);
+}
+
+/** Shows subscription status and, when Stripe is configured, Subscribe buttons. */
+function renderBilling(card) {
+  const b = state.billing || { configured: false, plans: [], subscription: { status: "none" } };
+  const sub = b.subscription || { status: "none" };
+  const planName = { monthly: "Monthly", yearly: "Yearly" };
+  const statusLabel = {
+    none: "No active subscription", active: "Active", trialing: "Free trial",
+    past_due: "Payment past due", canceled: "Canceled",
+  };
+  const kids = [h("h2", {}, "Subscription")];
+  const line = sub.status && sub.status !== "none"
+    ? `${statusLabel[sub.status] || sub.status}${sub.plan ? ` · ${planName[sub.plan] || sub.plan} plan` : ""}`
+    : statusLabel.none;
+  kids.push(h("p", { class: "muted" }, line));
+  if (sub.currentPeriodEnd) {
+    kids.push(h("p", { class: "muted small" }, `Renews / ends ${new Date(sub.currentPeriodEnd).toLocaleDateString()}`));
+  }
+  if (!b.configured) {
+    kids.push(h("p", { class: "muted small" }, "Billing isn't set up on this server yet. VEIL works fully without it."));
+  } else if (!b.plans || !b.plans.length) {
+    kids.push(h("p", { class: "muted small" }, "No plans are configured. Set STRIPE_PRICE_MONTHLY / STRIPE_PRICE_YEARLY on the server."));
+  } else {
+    const row = h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" });
+    b.plans.forEach((p) => {
+      const label = sub.status === "active" && sub.plan === p.plan ? `Current: ${planName[p.plan] || p.plan}` : `Subscribe ${planName[p.plan] || p.plan}`;
+      const btn = button(label, async () => {
+        try {
+          const r = await api("POST", "/api/billing/checkout", { plan: p.plan });
+          if (r && r.url) window.location.href = r.url;
+          else toast("Couldn't start checkout.");
+        } catch (e) { toast(e.message); }
+      }, sub.status === "active" && sub.plan === p.plan ? "ghost" : "");
+      row.appendChild(btn);
+    });
+    kids.push(row);
+  }
+  fill(card, ...kids);
 }
 
 /** Lets the primary admin grant another existing admin co-management of their phones. */
