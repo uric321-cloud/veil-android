@@ -408,3 +408,39 @@ describe("AI blocklist", () => {
     assert.equal((await model.getAiBlocklist()).version, 1); // no change, no new version
   });
 });
+
+describe("billing (Stripe scaffold)", () => {
+  it("routes Stripe events to an admin subscription update, and ignores the rest", async () => {
+    const { subscriptionFromEvent } = await import("../netlify/lib/billing.ts");
+    assert.equal(subscriptionFromEvent({ type: "ping", data: { object: {} } }), null);
+    const checkout = subscriptionFromEvent({
+      type: "checkout.session.completed",
+      data: { object: { client_reference_id: "adm_1", customer: "cus_9", metadata: { plan: "yearly" } } },
+    });
+    assert.deepEqual(checkout, { adminId: "adm_1", sub: { status: "active", plan: "yearly", customerId: "cus_9" } });
+    const canceled = subscriptionFromEvent({
+      type: "customer.subscription.deleted",
+      data: { object: { status: "canceled", customer: "cus_9", metadata: { adminId: "adm_1", plan: "yearly" } } },
+    });
+    assert.equal(canceled!.sub.status, "canceled");
+  });
+
+  it("verifies webhook signatures against the signing secret", async () => {
+    const { createHmac } = await import("node:crypto");
+    process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
+    const { verifyWebhook } = await import("../netlify/lib/billing.ts");
+    const raw = JSON.stringify({ type: "ping" });
+    const t = "1700000000";
+    const good = createHmac("sha256", "whsec_test").update(`${t}.${raw}`).digest("hex");
+    assert.equal(verifyWebhook(raw, `t=${t},v1=${good}`), true);
+    assert.equal(verifyWebhook(raw, `t=${t},v1=deadbeef`), false);
+    assert.equal(verifyWebhook(raw, null), false);
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+
+  it("stays fully off with no STRIPE_SECRET_KEY", async () => {
+    const { billingConfigured, availablePlans } = await import("../netlify/lib/billing.ts");
+    assert.equal(billingConfigured(), false);
+    assert.deepEqual(availablePlans(), []);
+  });
+});

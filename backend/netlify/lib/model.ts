@@ -24,6 +24,8 @@ export interface Admin {
   encPrivateKey?: string;
   /** PBKDF2 salt for the wrapping key. */
   keySalt?: string;
+  /** Subscription status (Stripe). Absent means never subscribed. */
+  subscription?: { status: string; plan?: string; customerId?: string; currentPeriodEnd?: number };
 }
 
 export interface DeviceStatus {
@@ -669,6 +671,14 @@ export async function setAdminKeys(admin: Admin, keys: { publicKey: string; encP
 
 export function adminKeys(admin: Admin): { publicKey: string | null; encPrivateKey: string | null; keySalt: string | null } {
   return { publicKey: admin.publicKey ?? null, encPrivateKey: admin.encPrivateKey ?? null, keySalt: admin.keySalt ?? null };
+}
+
+/** Applies a subscription update from a billing webhook to an admin by id. */
+export async function setAdminSubscription(adminId: string, sub: { status: string; plan?: string; customerId?: string; currentPeriodEnd?: number }): Promise<void> {
+  const admin = await kv().get<Admin>(K.admin(adminId));
+  if (!admin) return;
+  admin.subscription = sub;
+  await kv().set(K.admin(admin.id), admin);
 }
 
 /** The public key of whoever owns a device, so the dashboard can seal items to them. */

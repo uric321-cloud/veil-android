@@ -1,10 +1,11 @@
 import type { Config, Context } from "@netlify/functions";
 import { aggregateEvents, aiConfigured } from "../lib/ai.ts";
+import { availablePlans, billingConfigured, createCheckoutSession, subscriptionFromEvent, verifyWebhook } from "../lib/billing.ts";
 import { publicCatalog } from "../lib/inapp.ts";
 import { addSubscription, emailPartner, notificationsConfigured, notifyAdmin, removeSubscription, vapidPublicKey } from "../lib/notify.ts";
 import { HttpError, bearer, cookie, json, readJson, str } from "../lib/http.ts";
 import {
-  addCoAdmin, adminCount, adminKeys, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest, deviceOwnerPublicKey, removeCoAdmin, setAdminKeys, setDeviceNote,
+  addCoAdmin, adminCount, adminKeys, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest, deviceOwnerPublicKey, removeCoAdmin, setAdminKeys, setAdminSubscription, setDeviceNote,
   getAiBlocklist, getChat, getJob, getSummary, internalSecret, listDevices, listEvents, listRequests, login, logout,
   ownedDevice, pairDevice, publicAdmin, publicDevice, queueCommand, renameDevice, sessionAdmin, setPartnerEmail, syncDevice,
   takeRecoveryCode, updateConfig, type Admin, type Job,
@@ -101,6 +102,7 @@ const routes: [string, RegExp, Handler][] = [
       firstRun: (await adminCount()) === 0,
       signupOpen: !!env("ADMIN_SIGNUP_CODE"),
       aiConfigured: aiConfigured(),
+      billing: { configured: billingConfigured(), plans: availablePlans().map((p) => p.plan), subscription: admin?.subscription ?? null },
     });
   }],
   ["POST", /^\/api\/signup$/, async (req) => {
@@ -135,6 +137,25 @@ const routes: [string, RegExp, Handler][] = [
     const admin = await requireAdmin(req);
     const body = await readJson<{ email?: string }>(req);
     return json({ coAdmins: await removeCoAdmin(admin, str(body.email, 200)) });
+  }],
+
+  // ---------------------------------------------------------------- billing (Stripe, optional)
+  ["POST", /^\/api\/billing\/checkout$/, async (req) => {
+    const admin = await requireAdmin(req);
+    if (!billingConfigured()) throw new HttpError(503, "Billing is not set up on this server yet");
+    const body = await readJson<{ plan?: string }>(req);
+    const plan = body.plan === "yearly" ? "yearly" : "monthly";
+    const origin = env("URL") ?? new URL(req.url).origin;
+    return json({ url: await createCheckoutSession(admin.id, plan, origin.replace(/\/$/, "")) });
+  }],
+  ["POST", /^\/api\/billing\/webhook$/, async (req) => {
+    const raw = await req.text();
+    if (!verifyWebhook(raw, req.headers.get("stripe-signature"))) throw new HttpError(400, "Bad signature");
+    let event: unknown;
+    try { event = JSON.parse(raw); } catch { throw new HttpError(400, "Bad payload"); }
+    const update = subscriptionFromEvent(event as { type?: string; data?: { object?: unknown } });
+    if (update) await setAdminSubscription(update.adminId, update.sub);
+    return json({ received: true });
   }],
 
   // ---------------------------------------------------------------- admin: encryption identity (escape hatch)
