@@ -13,7 +13,7 @@ export const TIERS = ["young_child", "child", "teen", "adult", "custom"] as cons
 export const TEXT_ACTIONS = ["ignore", "strike", "bar", "frost"] as const;
 export const IMAGE_STRICTNESS = ["low", "medium", "high"] as const;
 export const WEB_MODES = ["filter", "allowlist"] as const;
-export const AUTO_APPROVE = ["off", "low_risk"] as const;
+export const AUTO_APPROVE = ["off", "low_risk", "ai_decides"] as const;
 export const LEVELS = ["custom", "open", "standard", "strict", "allowlist"] as const;
 
 export interface TempAllow {
@@ -118,7 +118,7 @@ export function defaultConfig(): DeviceConfig {
     aiClassification: true,
     webMode: "filter",
     aiAutoAllowSafe: true,
-    aiAutoApprove: "off",
+    aiAutoApprove: "ai_decides",
     level: "standard",
     screen: {
       enabled: true,

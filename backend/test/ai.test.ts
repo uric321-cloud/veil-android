@@ -113,11 +113,39 @@ describe("AI jobs", () => {
 
   it("leaves requests alone when auto-approval is off", async () => {
     const { device } = await pairedDevice();
+    await model.updateConfig(device, { aiAutoApprove: "off" });
     await model.syncDevice(device, { requests: [{ localId: "s1", host: "school.example" }] });
     const [req] = await model.listRequests(device.id);
     fakeClient([{ recommendation: "approve", suggestedMinutes: 0, category: "school", risk: "low", explanation: "" }]);
     await ai.runJob(await model.createJob("review", { deviceId: device.id, requestId: req.id }));
     assert.equal((await model.getRequest(device.id, req.id))!.status, "pending");
+  });
+
+  it("ai_decides approves safe, blocks unsafe, and escalates only when unsure", async () => {
+    const { device } = await pairedDevice(); // ai_decides is the default
+    await model.syncDevice(device, { requests: [
+      { localId: "a", host: "school.example", reason: "homework" },
+      { localId: "b", host: "casino.example", reason: "fun" },
+      { localId: "c", host: "forum.example", reason: "a community I use" },
+    ] });
+    const reqs = await model.listRequests(device.id);
+    const byHost = (h: string) => reqs.find((r) => r.host === h)!;
+    fakeClient([
+      { recommendation: "approve", suggestedMinutes: 0, category: "school", risk: "low", explanation: "Learning site.", needsHuman: false },
+      { recommendation: "deny", suggestedMinutes: 0, category: "gambling", risk: "high", explanation: "Online casino.", needsHuman: false },
+      { recommendation: "approve", suggestedMinutes: 0, category: "forum", risk: "medium", explanation: "Mixed content.", needsHuman: true },
+    ]);
+    for (const h of ["school.example", "casino.example", "forum.example"]) {
+      await ai.runJob(await model.createJob("review", { deviceId: device.id, requestId: byHost(h).id }));
+    }
+    const after = async (h: string) => (await model.getRequest(device.id, byHost(h).id))!;
+    const school = await after("school.example");
+    assert.equal(school.status, "approved"); assert.equal(school.autoApproved, true);
+    const casino = await after("casino.example");
+    assert.equal(casino.status, "denied"); assert.equal(casino.autoDenied, true);
+    const forum = await after("forum.example");
+    assert.equal(forum.status, "pending"); assert.equal(forum.escalated, true);
+    assert.deepEqual((await model.ownedDevice(device.adminId, device.id)).config.customAllow, ["school.example"]);
   });
 
   it("adds confidently safe sites to the shared allow list, never a blocked one", async () => {

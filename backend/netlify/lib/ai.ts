@@ -62,13 +62,14 @@ to conclude anything.`;
 const REVIEW_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["recommendation", "suggestedMinutes", "category", "risk", "explanation"],
+  required: ["recommendation", "suggestedMinutes", "category", "risk", "explanation", "needsHuman"],
   properties: {
     recommendation: { type: "string", enum: ["approve", "approve_limited", "deny"] },
     suggestedMinutes: { type: "integer", description: "For approve_limited: minutes to allow. 0 for permanent approve or deny." },
     category: { type: "string", description: "What the site is, in a few words." },
     risk: { type: "string", enum: ["low", "medium", "high"] },
     explanation: { type: "string", description: "2-4 sentences for the admin." },
+    needsHuman: { type: "boolean", description: "True only when you genuinely cannot decide and a person should: the site or app is ambiguous, you don't recognise it and it could go either way, or the reason given raises a judgement call about this particular person. False when the right call is clear either way." },
   },
 };
 
@@ -82,8 +83,8 @@ export async function reviewAppRequest(device: Device, pkg: string, label: strin
     "Say what this app is and recommend approve or deny (approve_limited is not available for apps; use approve or deny). " +
       "Consider: does it contain or link to explicit content, open social feeds or short videos, unfiltered web browsing, " +
       "chat with strangers, or ways around the filter (VPNs, proxies, other browsers, alternative app stores)? " +
-      "Utilities, banking, navigation, school and work apps are usually fine. If you don't recognise the package, say so " +
-      "and lean to deny with low confidence in the explanation.",
+      "Utilities, banking, navigation, school and work apps are usually fine. If you don't recognise the package and it could " +
+      "go either way, set needsHuman so a person decides; if it is clearly one an accountability filter would deny, deny it.",
   ].join("\n");
   const r = await ask<AiReview>(PRODUCT, user, REVIEW_SCHEMA, "medium");
   return { ...r, recommendation: r.recommendation === "approve_limited" ? "approve" : r.recommendation, suggestedMinutes: 0 };
@@ -100,7 +101,8 @@ export async function reviewRequest(device: Device, host: string, reason: string
     known ? `Earlier classification: ${known.category} (${known.reason})` : "",
     `Screen-filter age tier on this phone: ${device.config.screen.tier}`,
     "",
-    "Recommend approve (permanently allow), approve_limited (allow for a while, give minutes) or deny. Explain what the site is " +
+    "Recommend approve (permanently allow), approve_limited (allow for a while, give minutes) or deny, and set needsHuman only " +
+      "when you genuinely cannot decide. Explain what the site is " +
       "and why it was probably blocked. Many blocks are false positives: CDNs, login or API hosts of ordinary services, or " +
       "keyword matches inside harmless names. Adult content, hookup services, proxies, VPNs and encrypted-DNS resolvers that " +
       "would bypass the filter should be denied.",
@@ -307,14 +309,40 @@ export async function chat(device: Device, message: string): Promise<{ reply: st
  * applied straight away instead of waiting for the admin. Anything else
  * (medium/high risk, deny, unknown) still waits for a person.
  */
-export async function maybeAutoApprove(device: Device, r: UnblockRequest): Promise<boolean> {
-  if (device.config.aiAutoApprove !== "low_risk" || r.status !== "pending" || !r.ai) return false;
-  if (r.ai.risk !== "low" || r.ai.recommendation === "deny") return false;
-  const minutes = r.kind !== "app" && r.ai.recommendation === "approve_limited" ? Math.max(15, r.ai.suggestedMinutes || 60) : 0;
-  const decided = await decideRequest(device, r.id, true, minutes, "Approved automatically: the AI review found it low-risk.");
+export async function maybeAutoDecide(device: Device, r: UnblockRequest): Promise<"approved" | "denied" | "escalated" | null> {
+  const mode = device.config.aiAutoApprove;
+  if (mode === "off" || r.status !== "pending" || !r.ai) return null;
+  const ai = r.ai;
+
+  // Legacy mode: only auto-approve clearly-safe requests; everything else waits.
+  if (mode === "low_risk") {
+    if (ai.risk !== "low" || ai.recommendation === "deny" || ai.needsHuman) return null;
+    await approveFromAi(device, r, "Approved automatically: the AI review found it low-risk.");
+    return "approved";
+  }
+
+  // ai_decides: AI approves clearly-safe and denies clearly-unsafe on its own,
+  // and escalates to the admin only when it says it is unsure.
+  if (ai.needsHuman) {
+    const e = await getRequest(device.id, r.id);
+    if (e) { e.escalated = true; await saveRequest(e); }
+    return "escalated";
+  }
+  if (ai.recommendation === "deny") {
+    const decided = await decideRequest(device, r.id, false, 0, `Not allowed. ${ai.explanation}`.slice(0, 300));
+    decided.autoDenied = true;
+    await saveRequest(decided);
+    return "denied";
+  }
+  await approveFromAi(device, r, "Approved automatically by the AI review.");
+  return "approved";
+}
+
+async function approveFromAi(device: Device, r: UnblockRequest, note: string): Promise<void> {
+  const minutes = r.kind !== "app" && r.ai?.recommendation === "approve_limited" ? Math.max(15, r.ai.suggestedMinutes || 60) : 0;
+  const decided = await decideRequest(device, r.id, true, minutes, note);
   decided.autoApproved = true;
   await saveRequest(decided);
-  return true;
 }
 
 // ------------------------------------------------------------------ job runner (background function)
@@ -331,7 +359,7 @@ export async function runJob(job: Job): Promise<void> {
           ? await reviewAppRequest(device, r.host, r.label ?? r.host, r.reason)
           : await reviewRequest(device, r.host, r.reason, await listEvents(deviceId, 7));
         await saveRequest(r);
-        await maybeAutoApprove(device, r);
+        await maybeAutoDecide(device, r);
         await finishJob(job, r.ai);
         break;
       }
