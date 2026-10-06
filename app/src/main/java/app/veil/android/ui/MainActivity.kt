@@ -182,6 +182,63 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ Home
 
+    /** One line in the health card: a green/red status word, a label, and a Fix button when off. */
+    private fun healthRow(card: LinearLayout, label: String, ok: Boolean, fixLabel: String, fix: (() -> Unit)?) {
+        val c = this
+        val row = Ui.horizontal(c)
+        row.addView(Ui.text(c, if (ok) "✓" else "✗", 18f, if (ok) Ui.GOOD else Ui.BAD, true)
+            .apply { (layoutParams as? LinearLayout.LayoutParams)?.rightMargin = Ui.dp(c, 10f) })
+        row.addView(Ui.text(c, label, 15f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        if (!ok && fix != null) row.addView(Ui.button(c, fixLabel, filled = false) { fix() })
+        card.addView(row)
+        card.addView(Ui.space(c, 6f))
+    }
+
+    /**
+     * A single "Protection status" card: every guard VEIL needs, each with a Fix
+     * button when it's off. Shown once protection is wanted or the phone is paired,
+     * so setup problems (above all the accessibility permission) are visible at a glance.
+     */
+    private fun buildHealthCard(c: Context): LinearLayout? {
+        if (!store.protectionWanted && !VeilVpnService.isRunning && !remote.isPaired) return null
+        val card = Ui.card(c)
+        card.addView(Ui.heading(c, "Protection status"))
+        card.addView(Ui.space(c, 8f))
+
+        healthRow(card, "Filtering VPN is on", VeilVpnService.isRunning, "Turn on") { startProtection() }
+
+        if (store.screenProtectionWanted) {
+            healthRow(card, "Screen filter (accessibility) is on", RemoteSync.accessibilityOn(c),
+                "Open") { open(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            healthRow(card, "Can cover images and words on screen", Settings.canDrawOverlays(c),
+                "Open") { open(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) }
+        }
+
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        healthRow(card, "Won't be killed to save battery", pm.isIgnoringBatteryOptimizations(packageName),
+            "Fix") { open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+
+        healthRow(card, "No bypassing Private DNS set", store.privateDnsHost.isEmpty(),
+            "Open") { open(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
+
+        if (remote.isPaired) {
+            val owner = DeviceOwner.isOwner(c)
+            healthRow(card, if (owner) "Locked in place (can't be removed)" else "Can be uninstalled (not locked)",
+                owner, "", null)
+        }
+
+        val allOk = VeilVpnService.isRunning &&
+            (!store.screenProtectionWanted || (RemoteSync.accessibilityOn(c) && Settings.canDrawOverlays(c))) &&
+            pm.isIgnoringBatteryOptimizations(packageName) && store.privateDnsHost.isEmpty()
+        card.addView(Ui.caption(c, if (allOk)
+            "Everything protection needs is on."
+        else
+            "Fix the items marked ✗ above so protection can't be bypassed."))
+        return card
+    }
+
     private fun buildHome(col: LinearLayout) {
         val c = this
         val running = VeilVpnService.isRunning
@@ -203,6 +260,8 @@ class MainActivity : Activity() {
             status.addView(Ui.wideButton(c, "Turn on protection", filled = true, color = Ui.GOOD) { startProtection() })
         }
         col.addView(status)
+
+        buildHealthCard(c)?.let { col.addView(it) }
 
         if (remote.isPaired) {
             val m = Ui.card(c)
@@ -518,11 +577,24 @@ class MainActivity : Activity() {
             card.addView(Ui.wideButton(c, "Open setup") { startActivity(Intent(c, ScreenFilterActivity::class.java)) })
             col.addView(card)
         }
+        if (!Settings.canDrawOverlays(this)) {
+            val card = Ui.card(c)
+            card.addView(Ui.caption(c, "Let VEIL draw over other apps, so it can cover inappropriate words and images on the screen."))
+            card.addView(Ui.wideButton(c, "Allow", filled = false) { open(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) })
+            col.addView(card)
+        }
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {
             val card = Ui.card(c)
             card.addView(Ui.caption(c, "To keep protection running, let VEIL run in the background (battery can otherwise stop it overnight)."))
             card.addView(Ui.wideButton(c, "Allow background running", filled = false) { open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) })
+            col.addView(card)
+        }
+        if (store.privateDnsHost.isNotEmpty()) {
+            val card = Ui.card(c)
+            card.addView(Ui.text(c, "Private DNS is bypassing the filter", 16f, Ui.WARN, true))
+            card.addView(Ui.caption(c, "Android's Private DNS is set to ${store.privateDnsHost}. While it is on, apps can look up sites around VEIL. Set it to Automatic or Off."))
+            card.addView(Ui.wideButton(c, "Open network settings", filled = false, color = Ui.WARN) { open(Intent(Settings.ACTION_WIRELESS_SETTINGS)) })
             col.addView(card)
         }
     }

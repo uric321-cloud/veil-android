@@ -34,6 +34,14 @@ number of phones.
   uninstall VEIL. A scheduled check (`watch-devices`, every 15 min) raises a
   *phone went silent* alert when a phone that was checking in stops, so the admin
   knows if VEIL was removed or the phone was turned off.
+- **Tamper alerts, immediate.** When a guard is turned off on the phone - the
+  filtering VPN, the screen filter (accessibility), the screen-cover overlay, or
+  a bypassing Private DNS is set - the phone reports it on its next check-in and
+  the admin is alerted at once (push + email), with or without AI. On the phone a
+  persistent "protection needs attention" notification stays up, and a
+  **Protection status** health check on the home screen lists every guard with a
+  one-tap fix, so setup problems (above all the accessibility permission) are
+  obvious.
 - **Check-ins.** About once a minute the phone sends its status, what VEIL
   blocked, tamper alerts and unblock requests, and receives settings changes,
   request decisions, commands and the shared AI blocklist. A paired phone's
