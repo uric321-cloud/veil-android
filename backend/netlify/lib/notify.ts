@@ -71,15 +71,29 @@ async function sendEmail(to: string, subject: string, text: string, url: string)
   const key = env("RESEND_API_KEY");
   if (!key || !to) return;
   const from = env("RESEND_FROM") ?? "VEIL <onboarding@resend.dev>";
+  const body = url ? `${text}\n\n${url}` : text;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify({ from, to, subject, text: `${text}\n\n${url}` }),
+      body: JSON.stringify({ from, to, subject, text: body }),
     });
     if (!res.ok) console.error(`email send failed: ${res.status} ${await res.text().catch(() => "")}`);
   } catch (err) {
     console.error(`email send error: ${err}`);
+  }
+}
+
+/**
+ * Email an accountability partner (same Resend transport as admin email; only
+ * sends when RESEND_API_KEY is set). Never throws.
+ */
+export async function emailPartner(to: string, subject: string, text: string): Promise<void> {
+  if (!to) return;
+  try {
+    await sendEmail(to, subject, text, "");
+  } catch (err) {
+    console.error(`emailPartner failed: ${err}`);
   }
 }
 

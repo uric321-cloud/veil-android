@@ -66,6 +66,8 @@ export interface Device {
   aiClassifiedApps?: string[];
   /** Launchable apps on the phone, for the admin's Apps tab. Sent only when it changes. */
   apps?: InstalledApp[];
+  /** Accountability partner: emailed the daily digest and protection alerts for this phone. */
+  partnerEmail?: string;
 }
 
 export interface InstalledApp {
@@ -572,6 +574,15 @@ export async function renameDevice(device: Device, name: string): Promise<Device
   const n = str(name, 60);
   if (!n) throw new HttpError(400, "Name can't be empty");
   device.name = n;
+  await saveDevice(device);
+  return device;
+}
+
+/** Sets (or clears, with "") the accountability-partner email for a phone. */
+export async function setPartnerEmail(device: Device, email: string): Promise<Device> {
+  const e = str(email, 200).toLowerCase();
+  if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new HttpError(400, "Enter a valid email address");
+  device.partnerEmail = e || undefined;
   await saveDevice(device);
   return device;
 }

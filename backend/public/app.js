@@ -467,7 +467,16 @@ function viewOverview(root, data) {
       button("Update block lists", async () => { await api("POST", `/api/devices/${d.id}/commands`, { type: "refresh_lists" }); toast("The phone will download fresh lists on its next check-in."); }, "ghost")),
     h("p", { class: "muted small" }, "Commands reach the phone on its next check-in (about once a minute while it's online)."));
 
-  add(root, h("div", { class: "grid" }, h("div", {}, status, actions), h("div", {}, alerts, report)));
+  const partnerInput = h("input", { type: "email", placeholder: "partner@example.com", value: d.partnerEmail || "", style: "min-width:220px;flex:1" });
+  const partner = h("section", { class: "card stack" }, h("h2", {}, "Accountability partner"),
+    h("p", { class: "muted small" }, "A trusted person who gets emailed this phone's daily check-in report and any protection alerts (e.g. protection turned off). They can't change settings. Needs RESEND_API_KEY on the server. Leave blank to turn off."),
+    h("div", { class: "row", style: "gap:8px" }, partnerInput,
+      button("Save", async () => {
+        try { await api("POST", `/api/devices/${d.id}/partner`, { email: partnerInput.value.trim() }); toast(partnerInput.value.trim() ? "Partner saved." : "Partner removed."); }
+        catch (e) { toast(e.message); }
+      })));
+
+  add(root, h("div", { class: "grid" }, h("div", {}, status, actions, partner), h("div", {}, alerts, report)));
 }
 
 // ---------------- requests

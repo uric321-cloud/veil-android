@@ -1,12 +1,12 @@
 import type { Config, Context } from "@netlify/functions";
 import { aggregateEvents, aiConfigured } from "../lib/ai.ts";
 import { publicCatalog } from "../lib/inapp.ts";
-import { addSubscription, notificationsConfigured, notifyAdmin, removeSubscription, vapidPublicKey } from "../lib/notify.ts";
+import { addSubscription, emailPartner, notificationsConfigured, notifyAdmin, removeSubscription, vapidPublicKey } from "../lib/notify.ts";
 import { HttpError, bearer, cookie, json, readJson, str } from "../lib/http.ts";
 import {
   adminCount, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest,
   getAiBlocklist, getChat, getJob, getSummary, internalSecret, listDevices, listEvents, listRequests, login, logout,
-  ownedDevice, pairDevice, publicAdmin, publicDevice, queueCommand, renameDevice, sessionAdmin, syncDevice,
+  ownedDevice, pairDevice, publicAdmin, publicDevice, queueCommand, renameDevice, sessionAdmin, setPartnerEmail, syncDevice,
   takeRecoveryCode, updateConfig, type Admin, type Job,
 } from "../lib/model.ts";
 
@@ -74,12 +74,17 @@ const routes: [string, RegExp, Handler][] = [
     if (result.newTamper.length) {
       const first = result.newTamper[0].detail;
       const more = result.newTamper.length - 1;
+      const body = more > 0 ? `${first} (and ${more} more)` : first;
       await notifyAdmin(device.adminId, {
         title: `Protection alert on ${device.name}`,
-        body: more > 0 ? `${first} (and ${more} more)` : first,
+        body,
         path: `/#/device/${device.id}`,
         tag: `tamper-${device.id}`,
       });
+      if (device.partnerEmail) {
+        await emailPartner(device.partnerEmail, `Protection alert on ${device.name}`,
+          `${body}\n\nYou're receiving this as the accountability partner for ${device.name}.`);
+      }
     }
     return json(result.response);
   }],
@@ -172,6 +177,11 @@ const routes: [string, RegExp, Handler][] = [
     const admin = await requireAdmin(req);
     const d = await updateConfig(await ownedDevice(admin.id, id), await readJson(req));
     return json({ device: publicDevice(d) });
+  }],
+  ["POST", /^\/api\/devices\/([\w-]+)\/partner$/, async (req, [id]) => {
+    const admin = await requireAdmin(req);
+    const body = await readJson<{ email?: string }>(req);
+    return json({ device: publicDevice(await setPartnerEmail(await ownedDevice(admin.id, id), str(body.email, 200))) });
   }],
   ["POST", /^\/api\/devices\/([\w-]+)\/commands$/, async (req, [id]) => {
     const admin = await requireAdmin(req);

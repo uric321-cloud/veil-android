@@ -5,7 +5,7 @@ import {
   getDeviceForTest, ownedDevice, recordAppClassification, saveClassifications, saveRequest, saveSummary, type AiReview, type AppDecision,
   type Classification, type Device, type DeviceEvent, type Job, type Summary, type UnblockRequest,
 } from "./model.ts";
-import { notifyAdmin } from "./notify.ts";
+import { emailPartner, notifyAdmin } from "./notify.ts";
 import { kv } from "./store.ts";
 
 const MODEL = "claude-opus-5-5";
@@ -442,6 +442,10 @@ export async function runJob(job: Job): Promise<void> {
         if (!device) throw new Error("Device missing");
         const s = await summarize(device, periodDays || 1);
         await saveSummary(deviceId, s);
+        if (device.partnerEmail && s.text) {
+          await emailPartner(device.partnerEmail, `VEIL check-in for ${device.name}`,
+            `${s.text}\n\nYou're receiving this as the accountability partner for ${device.name}.`);
+        }
         await finishJob(job, s);
         break;
       }
