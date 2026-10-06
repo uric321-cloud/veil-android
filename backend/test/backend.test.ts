@@ -220,7 +220,8 @@ describe("pairing and sync", () => {
         appliedConfigVersion: 1,
         status: { protection: true, vpnRunning: true, deviceOwner: true, blockedToday: 3 },
         events: [
-          { type: "block", at: now - 1000, host: "bad.example", reason: "Adult content list", rule: "bad.example", count: 3 },
+          // A phone may still send a host; the server must ignore it and store only the category.
+          { type: "block", at: now - 1000, category: "adult", host: "bad.example", count: 3 },
           { type: "tamper", at: now, rule: "accessibility_off" },
         ],
         requests: [{ localId: "r1", host: "school-portal.example", reason: "homework" }],
@@ -238,7 +239,10 @@ describe("pairing and sync", () => {
 
     const activity = await body(await call("GET", `/api/devices/${pair.deviceId}/activity?days=1`, { cookie }));
     assert.equal(activity.stats.totalBlocks, 3);
-    assert.equal(activity.stats.topBlockedHosts[0].host, "bad.example");
+    // Content-free: only the category is kept, never the host.
+    assert.equal(activity.stats.topCategories[0].category, "adult");
+    assert.equal(activity.stats.topCategories[0].count, 3);
+    assert.equal(JSON.stringify(activity).includes("bad.example"), false);
 
     // A retried sync with the same request id does not duplicate it.
     await call("POST", "/api/device/sync", { token: pair.token, csrf: false, body: { requests: [{ localId: "r1", host: "school-portal.example" }] } });

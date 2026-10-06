@@ -91,14 +91,14 @@ export async function reviewAppRequest(device: Device, pkg: string, label: strin
   return { ...r, recommendation: r.recommendation === "approve_limited" ? "approve" : r.recommendation, suggestedMinutes: 0 };
 }
 
-export async function reviewRequest(device: Device, host: string, reason: string, history: DeviceEvent[]): Promise<AiReview> {
-  const blocksForHost = history.filter((e) => e.type === "block" && e.host && (e.host === host || e.host.endsWith(`.${host}`)));
+export async function reviewRequest(device: Device, host: string, reason: string, _history: DeviceEvent[]): Promise<AiReview> {
+  // The user themselves put this host forward by asking to unblock it, so
+  // classifying it here is content they volunteered - not covert activity. We
+  // keep no per-host block history (activity is stored content-free).
   const known = await getClassification(host);
   const user = [
     `The phone's user asked the admin to unblock: ${host}`,
     `Their reason: ${reason || "(none given)"}`,
-    `Why VEIL blocked it: ${blocksForHost[0] ? `${blocksForHost[0].reason} (rule: ${blocksForHost[0].rule})` : "no recent block recorded for this host"}`,
-    `Blocked attempts on this host in the last 7 days: ${blocksForHost.reduce((n, e) => n + (e.count ?? 1), 0)}`,
     known ? `Earlier classification: ${known.category} (${known.reason})` : "",
     `Screen-filter age tier on this phone: ${device.config.screen.tier}`,
     "",
@@ -246,21 +246,28 @@ const SUMMARY_SCHEMA = {
   },
 };
 
+/** Human-friendly labels for the content-free block categories. */
+const CATEGORY_LABELS: Record<string, string> = {
+  adult: "Adult content", bypass: "Filter-bypass attempt", blocklist: "Your block list",
+  keyword: "Blocked keyword", url: "Blocked page/section", ai: "AI-classified site",
+  allowlist: "Not on the allowed list", app: "Blocked app", other: "Other",
+};
+
 export function aggregateEvents(events: DeviceEvent[]) {
-  const blocksByHost = new Map<string, { count: number; reason: string }>();
-  const blocksByReason = new Map<string, number>();
+  const blocksByCategory = new Map<string, number>();
   const byHour = new Array(24).fill(0) as number[];
   let textCovered = 0;
   let imagesCovered = 0;
+  let totalBlocks = 0;
   const tamper: { at: string; rule: string; detail: string }[] = [];
   for (const e of events) {
     const n = e.count ?? 1;
-    if (e.type === "block" && e.host) {
-      const cur = blocksByHost.get(e.host) ?? { count: 0, reason: e.reason ?? "" };
-      cur.count += n;
-      blocksByHost.set(e.host, cur);
-      blocksByReason.set(e.reason ?? "other", (blocksByReason.get(e.reason ?? "other") ?? 0) + n);
+    if (e.type === "block") {
+      // Old stored events may still carry a host; use only the category going forward.
+      const cat = e.category ?? "other";
+      blocksByCategory.set(cat, (blocksByCategory.get(cat) ?? 0) + n);
       byHour[new Date(e.at).getUTCHours()] += n;
+      totalBlocks += n;
     } else if (e.type === "text") {
       textCovered += n;
     } else if (e.type === "image") {
@@ -270,9 +277,9 @@ export function aggregateEvents(events: DeviceEvent[]) {
     }
   }
   return {
-    totalBlocks: [...blocksByHost.values()].reduce((a, b) => a + b.count, 0),
-    topBlockedHosts: [...blocksByHost].sort((a, b) => b[1].count - a[1].count).slice(0, 25).map(([host, v]) => ({ host, ...v })),
-    blocksByReason: Object.fromEntries(blocksByReason),
+    totalBlocks,
+    topCategories: [...blocksByCategory].sort((a, b) => b[1] - a[1])
+      .map(([category, count]) => ({ category, label: CATEGORY_LABELS[category] ?? category, count })),
     blocksByUtcHour: byHour,
     textCovered,
     imagesCovered,

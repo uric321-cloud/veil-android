@@ -216,8 +216,8 @@ describe("AI jobs", () => {
     const { device } = await pairedDevice();
     const now = Date.now();
     await model.syncDevice(device, { events: [
-      { type: "block", at: now, host: "a.example", reason: "Adult content list", count: 4 },
-      { type: "block", at: now, host: "b.example", reason: "Keyword", count: 1 },
+      { type: "block", at: now, category: "adult", count: 4 },
+      { type: "block", at: now, category: "keyword", count: 1 },
       { type: "tamper", at: now, rule: "vpn_revoked" },
     ] });
     const calls = fakeClient([{ text: "Quiet day.", highlights: ["1", "2", "3", "4", "5", "6"], concernLevel: "low" }]);
