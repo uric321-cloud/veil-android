@@ -134,9 +134,14 @@ describe("config", () => {
 
 describe("proactive site catalog", () => {
   it("decides mixed-site sections before the page loads", () => {
+    // Victoria's Secret is blocked across the whole domain - including "sleepwear"
+    // sections, which are the sheer-lingerie pages that slipped through per-path rules.
     assert.deepEqual(catalogVerdict("https://www.victoriassecret.com/lingerie/bras"), { action: "block", category: "lingerie" });
-    assert.deepEqual(catalogVerdict("https://victoriassecret.com/lounge/robes"), { action: "allow", category: "loungewear" });
-    assert.equal(catalogVerdict("https://victoriassecret.com/"), null);
+    assert.deepEqual(catalogVerdict("https://www.victoriassecret.com/womens-sleepwear/cami-sets/tease-chiffon"), { action: "block", category: "lingerie" });
+    assert.deepEqual(catalogVerdict("https://victoriassecret.com/"), { action: "block", category: "lingerie" });
+    // A general department store stays usable except its intimates section.
+    assert.deepEqual(catalogVerdict("https://www.nordstrom.com/browse/lingerie"), { action: "block", category: "lingerie" });
+    assert.equal(catalogVerdict("https://www.nordstrom.com/browse/shoes"), null);
     assert.equal(catalogVerdict("https://wikipedia.org/wiki/Cat"), null);
   });
   it("has a stable version and ships the rules", () => {

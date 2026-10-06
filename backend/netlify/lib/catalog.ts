@@ -27,15 +27,21 @@ export interface PathRule {
  * from being caught by keyword rules.
  */
 const SEED: PathRule[] = [
-  // Victoria's Secret - the canonical example.
-  { domain: "victoriassecret.com", contains: "/lounge", action: "allow", category: "loungewear" },
-  { domain: "victoriassecret.com", contains: "/clothing", action: "allow", category: "clothing" },
-  { domain: "victoriassecret.com", contains: "/lingerie", action: "block", category: "lingerie" },
-  { domain: "victoriassecret.com", contains: "/bras", action: "block", category: "lingerie" },
-  { domain: "victoriassecret.com", contains: "/panties", action: "block", category: "lingerie" },
-  { domain: "victoriassecret.com", contains: "/swim", action: "block", category: "swimwear" },
+  // Victoria's Secret (and PINK, a subdomain) is a lingerie brand end to end:
+  // even its "sleepwear" and "cami sets" are sheer lingerie - e.g. a page filed
+  // under /womens-sleepwear/cami-sets/ - and the product imagery is intimate on
+  // every section. Per-section rules missed anything filed under an unexpected
+  // path, so the whole domain is blocked. (To allow its apparel sections for a
+  // family, swap this for per-path allows like { contains: "/clothing", allow }.)
+  { domain: "victoriassecret.com", contains: "", action: "block", category: "lingerie" },
+  { domain: "adoreme.com", contains: "", action: "block", category: "lingerie" },
+  { domain: "savagex.com", contains: "", action: "block", category: "lingerie" },
+  { domain: "honeybirdette.com", contains: "", action: "block", category: "lingerie" },
+  { domain: "frederics.com", contains: "", action: "block", category: "lingerie" },
 
-  // General department stores: block intimates/lingerie/swim sections.
+  // General department stores: block the intimates / lingerie / sleepwear / swim
+  // sections, keeping the rest of the store usable. Sleepwear is included here
+  // because these stores shelve sheer "sleep" sets alongside pyjamas.
   { domain: "macys.com", contains: "/lingerie", action: "block", category: "lingerie" },
   { domain: "macys.com", contains: "/intimates", action: "block", category: "lingerie" },
   { domain: "nordstrom.com", contains: "/lingerie", action: "block", category: "lingerie" },
@@ -44,6 +50,7 @@ const SEED: PathRule[] = [
   { domain: "kohls.com", contains: "/intimates", action: "block", category: "lingerie" },
   { domain: "amazon.com", contains: "/lingerie", action: "block", category: "lingerie" },
   { domain: "shein.com", contains: "/lingerie", action: "block", category: "lingerie" },
+  { domain: "shein.com", contains: "/sleep", action: "block", category: "lingerie" },
   { domain: "shein.com", contains: "/swimwear", action: "block", category: "swimwear" },
 
   // Social / media sites: block the risky discovery surfaces, keep the rest.
