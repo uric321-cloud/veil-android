@@ -284,7 +284,32 @@ async function renderDevices() {
     const q = search.value.trim().toLowerCase();
     data.devices.forEach((d, i) => { cards[i].style.display = (!q || d.name.toLowerCase().includes(q) || d.id.toLowerCase().includes(q)) ? "" : "none"; });
   });
-  fill($app(), head, banner, data.devices.length ? h("div", {}, search, grid) : empty);
+  const team = h("section", { class: "card stack", style: "margin-top:16px" }, h("h2", {}, "Team (co-admins)"));
+  renderTeam(team);
+  fill($app(), head, banner, data.devices.length ? h("div", {}, search, grid) : empty, team);
+}
+
+/** Lets the primary admin grant another existing admin co-management of their phones. */
+async function renderTeam(card) {
+  let list = [];
+  try { list = (await api("GET", "/api/coadmins")).coAdmins || []; } catch (_) { /* ignore */ }
+  const emailInput = h("input", { type: "email", placeholder: "coadmin@example.com", style: "min-width:220px;flex:1" });
+  const redraw = (arr) => {
+    fill(card, h("h2", {}, "Team (co-admins)"),
+      h("p", { class: "muted small" }, "People you add here can see and manage all your phones from their own VEIL account. They must create an account first (same server), then you add them by email. They can't add co-admins of their own or delete your account."),
+      h("div", { class: "row", style: "gap:8px" }, emailInput,
+        button("Add", async () => {
+          try { redraw((await api("POST", "/api/coadmins", { email: emailInput.value.trim() })).coAdmins); toast("Co-admin added."); }
+          catch (e) { toast(e.message); }
+        })),
+      arr.length ? h("ul", { class: "list" }, arr.map((e) => h("li", { class: "spread" }, h("span", {}, e),
+        button("Remove", async () => {
+          try { redraw((await api("DELETE", "/api/coadmins", { email: e })).coAdmins); toast("Removed."); }
+          catch (err) { toast(err.message); }
+        }, "ghost small"))))
+        : h("p", { class: "muted small" }, "No co-admins yet."));
+  };
+  redraw(list);
 }
 
 // ------------------------------------------------------------------ pairing

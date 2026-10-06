@@ -157,6 +157,39 @@ describe("admin accounts", () => {
     await call("POST", "/api/logout", { cookie });
     assert.equal((await call("GET", "/api/devices", { cookie })).status, 401);
   });
+
+  it("lets a co-admin manage the owner's phones, and revokes it", async () => {
+    const { cookie: aCookie, pair } = await signupAndPair();
+    // A second admin (B) needs the sign-up code to register.
+    envVars.ADMIN_SIGNUP_CODE = "team";
+    const bSignup = await call("POST", "/api/signup", { body: { email: "b@example.com", password: "correct horse battery", signupCode: "team" } });
+    assert.equal(bSignup.status, 200);
+    const bCookie = sessionFrom(bSignup);
+
+    // Before being added, B sees no phones and can't open A's.
+    assert.equal((await body(await call("GET", "/api/devices", { cookie: bCookie }))).devices.length, 0);
+    assert.equal((await call("GET", `/api/devices/${pair.deviceId}`, { cookie: bCookie })).status, 404);
+
+    // Unknown email can't be added.
+    assert.equal((await call("POST", "/api/coadmins", { cookie: aCookie, body: { email: "nobody@example.com" } })).status, 404);
+
+    // A adds B as a co-admin.
+    const add = await call("POST", "/api/coadmins", { cookie: aCookie, body: { email: "b@example.com" } });
+    assert.equal(add.status, 200);
+    assert.deepEqual((await body(add)).coAdmins, ["b@example.com"]);
+
+    // Now B sees and can manage A's phone.
+    assert.equal((await body(await call("GET", "/api/devices", { cookie: bCookie }))).devices.length, 1);
+    assert.equal((await call("GET", `/api/devices/${pair.deviceId}`, { cookie: bCookie })).status, 200);
+    assert.equal((await call("PATCH", `/api/devices/${pair.deviceId}/config`, { cookie: bCookie, body: { safeSearch: false } })).status, 200);
+
+    // A removes B; access is revoked.
+    const rm = await call("DELETE", "/api/coadmins", { cookie: aCookie, body: { email: "b@example.com" } });
+    assert.equal(rm.status, 200);
+    assert.deepEqual((await body(rm)).coAdmins, []);
+    assert.equal((await body(await call("GET", "/api/devices", { cookie: bCookie }))).devices.length, 0);
+    assert.equal((await call("GET", `/api/devices/${pair.deviceId}`, { cookie: bCookie })).status, 404);
+  });
 });
 
 describe("pairing and sync", () => {
