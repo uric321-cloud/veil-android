@@ -20,6 +20,11 @@ class OverlayController(private val context: Context) {
         if (view != null) return
         try {
             val v = RedactionOverlayView(context)
+            // The overlay must never feed the accessibility service its own
+            // redraws: otherwise each cover repaint fires a content-changed
+            // event, which triggers another scan and repaint - a tight loop
+            // that shows up as the screen constantly flashing.
+            v.importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
             // From the accessibility service, an accessibility overlay needs no
             // "display over other apps" permission and sits above app overlays.
             val type = if (context is android.accessibilityservice.AccessibilityService)
