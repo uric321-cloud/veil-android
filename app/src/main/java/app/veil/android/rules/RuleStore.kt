@@ -92,6 +92,45 @@ class RuleStore private constructor(context: Context) {
 
     fun removeAllow(host: String) { customAllow = customAllow - host }
 
+    /** Admin-approved temporary allows, host -> expiry (epoch ms). Stored as "host|until". */
+    var tempAllows: Map<String, Long>
+        get() = (prefs.getStringSet(K_TEMP_ALLOW, emptySet()) ?: emptySet()).mapNotNull { e ->
+            val i = e.lastIndexOf('|')
+            val until = if (i > 0) e.substring(i + 1).toLongOrNull() else null
+            if (until == null) null else e.substring(0, i) to until
+        }.toMap()
+        set(v) = prefs.edit().putStringSet(K_TEMP_ALLOW, v.map { "${it.key}|${it.value}" }.toSet()).apply()
+
+    fun liveTempAllows(now: Long = System.currentTimeMillis()): Map<String, Long> = tempAllows.filterValues { it > now }
+
+    /** Drops expired temporary allows; the change rebuilds the matcher. Returns true if anything expired. */
+    fun pruneTempAllows(now: Long = System.currentTimeMillis()): Boolean {
+        val all = tempAllows
+        val live = all.filterValues { it > now }
+        if (live.size == all.size) return false
+        tempAllows = live
+        return true
+    }
+
+    /** Bumped when a new AI blocklist file is saved, so the matcher reloads it. */
+    var aiBlocklistVersion: Int
+        get() = prefs.getInt(K_AI_BLOCK_VERSION, 0)
+        set(v) = prefs.edit().putInt(K_AI_BLOCK_VERSION, v).apply()
+
+    /** Admin's "allowed sites only" mode: everything else gets NXDOMAIN. */
+    var webAllowlistMode: Boolean
+        get() = prefs.getBoolean(K_WEB_ALLOWLIST, false)
+        set(v) = prefs.edit().putBoolean(K_WEB_ALLOWLIST, v).apply()
+
+    /** In allowlist mode, also allow the AI's shared list of clearly safe sites. */
+    var aiAutoAllowSafe: Boolean
+        get() = prefs.getBoolean(K_AI_ALLOW_SAFE, true)
+        set(v) = prefs.edit().putBoolean(K_AI_ALLOW_SAFE, v).apply()
+
+    var aiClassification: Boolean
+        get() = prefs.getBoolean(K_AI_CLASSIFY, true)
+        set(v) = prefs.edit().putBoolean(K_AI_CLASSIFY, v).apply()
+
     fun addKeyword(word: String): Boolean {
         val w = word.trim().lowercase(Locale.ROOT)
         if (w.length < 3 || w.any { it.isWhitespace() }) return false
@@ -165,6 +204,22 @@ class RuleStore private constructor(context: Context) {
     var safeListApps: Set<String>
         get() = prefs.getStringSet(K_SAFELIST, DEFAULT_SAFELIST)?.toSet() ?: DEFAULT_SAFELIST
         set(v) = prefs.edit().putStringSet(K_SAFELIST, v.toSet()).apply()
+
+    /** Stage 4: cover explicit images on screen (Android 11+). */
+    var imageFilter: Boolean
+        get() = prefs.getBoolean(K_IMAGE_ON, true)
+        set(v) = prefs.edit().putBoolean(K_IMAGE_ON, v).apply()
+
+    /** "low" (only clearly explicit), "medium", "high" (also suggestive). */
+    var imageStrictness: String
+        get() = prefs.getString(K_IMAGE_STRICT, "medium") ?: "medium"
+        set(v) = prefs.edit().putString(K_IMAGE_STRICT, v).apply()
+
+    val imagesCoveredTotal: Long get() = prefs.getLong(K_IMAGE_TOTAL, 0)
+    fun countImagesCovered(n: Int) {
+        if (n <= 0) return
+        prefs.edit().putLong(K_IMAGE_TOTAL, prefs.getLong(K_IMAGE_TOTAL, 0) + n).apply()
+    }
 
     val textCoveredTotal: Long get() = prefs.getLong(K_TEXT_TOTAL, 0)
     fun countTextCovered(n: Int) {
@@ -243,6 +298,8 @@ class RuleStore private constructor(context: Context) {
         append(" bypassProtection=").append(bypassProtectionEnabled)
         append(" upstreamFamily=").append(upstreamFamilyFilter)
         append(" customBlock=").append(customBlock.size).append(" customAllow=").append(customAllow.size)
+        append(" allowlistMode=").append(webAllowlistMode)
+        append(" tempAllow=").append(liveTempAllows().size).append(" aiBlocklistVersion=").append(aiBlocklistVersion)
         append(" pin=").append(hasPin)
         append(" listCount=").append(listDomainCount).append(" listUpdatedAt=").append(listUpdatedAt)
         append(" privateDns='").append(privateDnsHost).append('\'')
@@ -252,6 +309,7 @@ class RuleStore private constructor(context: Context) {
         append(" deobf=").append(textDeobfuscate)
         append(" textBlock=").append(textBlockWords.size).append(" textAllow=").append(textAllowWords.size)
         append(" safeList=").append(safeListApps.size).append(" textCovered=").append(textCoveredTotal)
+        append(" images=").append(imageFilter).append('/').append(imageStrictness).append(" imagesCovered=").append(imagesCoveredTotal)
     }
 
     companion object {
@@ -280,6 +338,11 @@ class RuleStore private constructor(context: Context) {
         const val K_TODAY_DATE = "blocked_today_date"
         const val K_PIN_HASH = "pin_hash"
         const val K_PIN_SALT = "pin_salt"
+        const val K_TEMP_ALLOW = "temp_allow"
+        const val K_AI_BLOCK_VERSION = "ai_blocklist_version"
+        const val K_AI_CLASSIFY = "ai_classification"
+        const val K_WEB_ALLOWLIST = "web_allowlist_mode"
+        const val K_AI_ALLOW_SAFE = "ai_auto_allow_safe"
 
         // ---- screen filter keys ----
         const val K_SCREEN_WANTED = "screen_protection_wanted"
@@ -294,12 +357,15 @@ class RuleStore private constructor(context: Context) {
         const val K_TEXT_ALLOW = "text_allow_words"
         const val K_SAFELIST = "safe_list_apps"
         const val K_TEXT_TOTAL = "text_covered_total"
+        const val K_IMAGE_ON = "image_filter"
+        const val K_IMAGE_STRICT = "image_strictness"
+        const val K_IMAGE_TOTAL = "images_covered_total"
 
         /** Keys whose change means the DNS matcher must be rebuilt. */
-        val RULE_KEYS = setOf(K_ADULT, K_KEYWORDS_ON, K_SAFESEARCH, K_YT_STRICT, K_BYPASS, K_UPSTREAM_FAMILY, K_BLOCK, K_ALLOW, K_KEYWORDS, K_LIST_UPDATED)
+        val RULE_KEYS = setOf(K_ADULT, K_KEYWORDS_ON, K_SAFESEARCH, K_YT_STRICT, K_BYPASS, K_UPSTREAM_FAMILY, K_BLOCK, K_ALLOW, K_KEYWORDS, K_LIST_UPDATED, K_TEMP_ALLOW, K_AI_BLOCK_VERSION, K_WEB_ALLOWLIST, K_AI_ALLOW_SAFE)
 
         /** Keys whose change means the text engine must be rebuilt. */
-        val SCREEN_RULE_KEYS = setOf(K_TEXT_ON, K_TEXT_TIER, K_TEXT_LOGONLY, K_TEXT_DEOBF, K_CUSTOM_MILD, K_CUSTOM_STRONG, K_CUSTOM_EXPLICIT, K_TEXT_BLOCK, K_TEXT_ALLOW, K_SAFELIST)
+        val SCREEN_RULE_KEYS = setOf(K_TEXT_ON, K_TEXT_TIER, K_TEXT_LOGONLY, K_TEXT_DEOBF, K_CUSTOM_MILD, K_CUSTOM_STRONG, K_CUSTOM_EXPLICIT, K_TEXT_BLOCK, K_TEXT_ALLOW, K_SAFELIST, K_IMAGE_ON, K_IMAGE_STRICT)
 
         /** Apps never scanned: VEIL itself plus common safe system apps. */
         val DEFAULT_SAFELIST: Set<String> = setOf(

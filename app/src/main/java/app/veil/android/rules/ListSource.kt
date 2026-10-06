@@ -16,6 +16,8 @@ class ListSource(private val context: Context) {
     @Volatile private var adult: DomainSet? = null
     @Volatile private var adultLoadedFrom: String = ""
     @Volatile private var bypass: DomainSet? = null
+    @Volatile private var aiBlock: DomainSet? = null
+    @Volatile private var aiBlockStamp: Long = -1
 
     private fun updatedFile(): File = File(context.filesDir, "adult-updated.txt")
 
@@ -46,6 +48,61 @@ class ListSource(private val context: Context) {
     }
 
     fun adultDomainCount(): Int = adultSet().size
+
+    private fun aiBlockFile(): File = File(context.filesDir, "ai-blocklist.txt")
+
+    /** The admin backend's shared AI blocklist, as last downloaded. Reloaded when the file changes. */
+    fun aiBlockSet(): DomainSet {
+        val f = aiBlockFile()
+        val stamp = if (f.exists()) f.lastModified() else 0L
+        aiBlock?.let { if (aiBlockStamp == stamp) return it }
+        synchronized(this) {
+            aiBlock?.let { if (aiBlockStamp == stamp) return it }
+            val set = if (f.exists()) f.inputStream().use { DomainSet(readDomains(it)) } else DomainSet(emptyList())
+            aiBlock = set
+            aiBlockStamp = stamp
+            return set
+        }
+    }
+
+    fun saveAiBlocklist(domains: List<String>) = writeAtomically(aiBlockFile(), domains)
+
+    private fun aiAllowFile(): File = File(context.filesDir, "ai-allowlist.txt")
+    @Volatile private var aiAllow: DomainSet? = null
+    @Volatile private var aiAllowStamp: Long = -1
+
+    /** The AI's shared list of clearly safe sites, for allowed-sites-only mode. */
+    fun aiAllowSet(): DomainSet {
+        val f = aiAllowFile()
+        val stamp = if (f.exists()) f.lastModified() else 0L
+        aiAllow?.let { if (aiAllowStamp == stamp) return it }
+        synchronized(this) {
+            val set = if (f.exists()) f.inputStream().use { DomainSet(readDomains(it)) } else DomainSet(emptyList())
+            aiAllow = set
+            aiAllowStamp = stamp
+            return set
+        }
+    }
+
+    fun saveAiAllowlist(domains: List<String>) = writeAtomically(aiAllowFile(), domains)
+
+    @Volatile private var essentials: DomainSet? = null
+
+    fun essentialsSet(): DomainSet {
+        essentials?.let { return it }
+        synchronized(this) {
+            essentials?.let { return it }
+            val set = context.assets.open("lists/essentials.txt").use { DomainSet(readDomains(it)) }
+            essentials = set
+            return set
+        }
+    }
+
+    private fun writeAtomically(target: File, domains: List<String>) {
+        val tmp = File(target.path + ".tmp")
+        tmp.writeText(domains.joinToString("\n"))
+        if (!tmp.renameTo(target)) { target.delete(); tmp.renameTo(target) }
+    }
 
     private fun readDomains(stream: InputStream): List<String> {
         val out = ArrayList<String>(50_000)

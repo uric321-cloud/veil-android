@@ -170,7 +170,7 @@ object Ui {
         texts.addView(text(c, label, 14f, TEXT, true))
         if (sub != null) texts.addView(caption(c, sub))
         row.addView(texts)
-        row.addView(button(c, actionLabel, filled = false, color = actionColor, onClick = onAction).apply {
+        if (actionLabel.isNotEmpty()) row.addView(button(c, actionLabel, filled = false, color = actionColor, onClick = onAction).apply {
             setPadding(dp(c, 12f), dp(c, 4f), dp(c, 12f), dp(c, 4f))
             minHeight = dp(c, 36f); minimumHeight = dp(c, 36f)
         })

@@ -1,0 +1,33 @@
+# Allowed even in "allowed sites only" mode, so the phone itself keeps working.
+# Subdomains are included. Keep this list to infrastructure, never content.
+# Android connectivity checks, time, updates
+connectivitycheck.gstatic.com
+connectivitycheck.android.com
+clients1.google.com
+clients3.google.com
+clients4.google.com
+time.android.com
+pool.ntp.org
+android.com
+# Google Play, accounts, push notifications (FCM)
+play.googleapis.com
+play-fe.googleapis.com
+android.clients.google.com
+android.googleapis.com
+accounts.google.com
+mtalk.google.com
+fcm.googleapis.com
+firebaseinstallations.googleapis.com
+firebaselogging-pa.googleapis.com
+gstatic.com
+gvt1.com
+gvt2.com
+gvt3.com
+# Messaging and navigation commonly allowed on filtered phones
+whatsapp.net
+whatsapp.com
+waze.com
+# Carrier and device services
+samsungdm.com
+samsungcloud.com
+xiaomi.com

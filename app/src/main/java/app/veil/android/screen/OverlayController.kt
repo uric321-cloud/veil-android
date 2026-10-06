@@ -20,11 +20,16 @@ class OverlayController(private val context: Context) {
         if (view != null) return
         try {
             val v = RedactionOverlayView(context)
-            // minSdk is 26, so TYPE_APPLICATION_OVERLAY is always available.
+            // From the accessibility service, an accessibility overlay needs no
+            // "display over other apps" permission and sits above app overlays.
+            val type = if (context is android.accessibilityservice.AccessibilityService)
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or

@@ -122,6 +122,25 @@ class ScreenFilterActivity : Activity() {
         }
         col.addView(tierCard)
 
+        val img = Ui.card(c)
+        img.addView(Ui.heading(c, "Images"))
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            img.addView(Ui.caption(c, "An on-device model checks images on screen and covers explicit ones in any app. Images never leave this phone. ${store.imagesCoveredTotal} covered so far."))
+            img.addView(Ui.switchRow(c, "Cover explicit images", null, store.imageFilter) { v ->
+                withPin({ store.imageFilter = v }, { render() })
+            })
+            val labels = mapOf("low" to "Only clearly explicit", "medium" to "Explicit (recommended)", "high" to "Explicit and suggestive")
+            img.addView(actionRowImages(c, labels[store.imageStrictness] ?: store.imageStrictness) {
+                val keys = labels.keys.toList()
+                AlertDialog.Builder(this).setTitle("What to cover")
+                    .setItems(keys.map { labels[it] }.toTypedArray()) { _, i -> withPin({ store.imageStrictness = keys[i] }, { render() }) }
+                    .show()
+            })
+        } else {
+            img.addView(Ui.caption(c, "Covering images needs Android 11 or newer."))
+        }
+        col.addView(img)
+
         // ---- options ----
         val opts = Ui.card(c)
         opts.addView(Ui.heading(c, "Options"))
@@ -205,6 +224,15 @@ class ScreenFilterActivity : Activity() {
         return card
     }
 
+    private fun actionRowImages(c: Activity, value: String, onClick: () -> Unit): LinearLayout {
+        val row = Ui.horizontal(c)
+        row.addView(Ui.text(c, "What to cover: $value", 14f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        row.addView(Ui.button(c, "Change", filled = false) { onClick() })
+        return row
+    }
+
     private fun pickTier() {
         val labels = Tiers.IDS.map { Tiers.label(it) }.toTypedArray()
         AlertDialog.Builder(this).setTitle("Strictness")
@@ -214,6 +242,14 @@ class ScreenFilterActivity : Activity() {
 
     // ---- PIN gate (mirrors MainActivity) ----
     private fun withPin(change: () -> Unit, after: () -> Unit) {
+        val remote = app.veil.android.remote.RemoteStore.get(this)
+        if (remote.isPaired) {
+            AlertDialog.Builder(this).setTitle("Managed by ${remote.adminName.ifEmpty { "your admin" }}")
+                .setMessage("The screen filter's settings on this phone are set by your admin.")
+                .setPositiveButton("OK", null).show()
+            render()
+            return
+        }
         if (!store.hasPin || System.currentTimeMillis() < unlockedUntil) { change(); after(); return }
         val input = Ui.pinInput(this, "PIN")
         val wrap = Ui.vertical(this, 20f).apply { addView(input) }

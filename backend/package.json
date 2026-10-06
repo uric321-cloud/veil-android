@@ -1,0 +1,19 @@
+{
+  "name": "veil-backend",
+  "private": true,
+  "type": "module",
+  "description": "VEIL admin backend: pairing, remote settings, activity, and AI review on Netlify Functions + Blobs.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "@netlify/blobs": "^11.1.2",
+    "@netlify/functions": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.3"
+  }
+}

@@ -54,7 +54,15 @@ class Matcher(
     private val keywords: List<String>,
     private val safeSearch: Boolean,
     private val youtubeStrict: Boolean,
-    private val stripHttpsRecords: Boolean
+    private val stripHttpsRecords: Boolean,
+    /** Sites the admin backend's AI classified as adult or bypass (shared list). */
+    private val aiBlock: DomainSet? = null,
+    /** "Allowed sites only": anything not allowed below is blocked. */
+    private val allowOnly: Boolean = false,
+    /** Infrastructure the phone needs even in allowed-sites-only mode. */
+    private val essentials: DomainSet? = null,
+    /** The AI's shared list of clearly safe sites (used only in allowed-sites-only mode). */
+    private val aiAllow: DomainSet? = null
 ) {
     fun decide(host: String, qtype: Int): Decision {
         if (host.isEmpty() || !host.contains('.')) return Decision.Allow
@@ -65,6 +73,10 @@ class Matcher(
         customBlock.match(host)?.let { return Decision.Block("Your block list", it) }
         for (k in keywords) if (host.contains(k)) return Decision.Block("Keyword “$k”", k)
         adult?.match(host)?.let { return Decision.Block("Adult content list", it) }
+        aiBlock?.match(host)?.let { return Decision.Block("AI-classified site", it) }
+        if (allowOnly && essentials?.match(host) == null && aiAllow?.match(host) == null) {
+            return Decision.Block(NOT_ALLOWED, host)
+        }
 
         if (safeSearch) {
             SafeSearch.canonicalFor(host, youtubeStrict)?.let { return Decision.Rewrite(it) }
@@ -74,16 +86,23 @@ class Matcher(
     }
 
     companion object {
+        /** Block reason for allowed-sites-only mode; the VPN reports these for AI classification. */
+        const val NOT_ALLOWED = "Not on the allowed list"
+
         fun build(store: RuleStore, lists: ListSource): Matcher {
             return Matcher(
                 adult = if (store.adultListEnabled) lists.adultSet() else null,
                 bypassHosts = if (store.bypassProtectionEnabled) lists.bypassSet() else null,
                 customBlock = DomainSet(store.customBlock),
-                customAllow = DomainSet(store.customAllow),
+                customAllow = DomainSet(store.customAllow + store.liveTempAllows().keys),
                 keywords = if (store.keywordsEnabled) store.keywords.map { it.lowercase() } else emptyList(),
                 safeSearch = store.safeSearchEnabled,
                 youtubeStrict = store.youtubeStrict,
-                stripHttpsRecords = store.bypassProtectionEnabled
+                stripHttpsRecords = store.bypassProtectionEnabled,
+                aiBlock = if (store.adultListEnabled) lists.aiBlockSet() else null,
+                allowOnly = store.webAllowlistMode,
+                essentials = if (store.webAllowlistMode) lists.essentialsSet() else null,
+                aiAllow = if (store.webAllowlistMode && store.aiAutoAllowSafe) lists.aiAllowSet() else null
             )
         }
     }

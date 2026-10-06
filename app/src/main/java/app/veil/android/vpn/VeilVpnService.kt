@@ -21,6 +21,8 @@ import app.veil.android.VeilApp
 import app.veil.android.VeilLog
 import app.veil.android.dns.DnsMessage
 import app.veil.android.dns.Upstream
+import app.veil.android.remote.EventQueue
+import app.veil.android.remote.RemoteStore
 import app.veil.android.rules.BlockLog
 import app.veil.android.rules.Decision
 import app.veil.android.rules.ListSource
@@ -105,6 +107,7 @@ class VeilVpnService : VpnService() {
     override fun onRevoke() {
         VeilLog.w("VPN revoked by the system (another VPN or user action)")
         store.lastRevokeAt = System.currentTimeMillis()
+        EventQueue.tamper("vpn_revoked")
         postAlert(
             "Protection was turned off",
             "Another VPN app took over the connection, or the VPN was removed in Settings. Open VEIL to turn protection back on."
@@ -252,6 +255,8 @@ class VeilVpnService : VpnService() {
                 val r = DnsMessage.nxDomain(payload, q)
                 writeToTun(Packets.udpReply(pkt, r, r.size))
                 onBlocked(q.name, decision)
+                // In allowed-sites-only mode, unknown sites go to AI classification so safe ones open soon.
+                if (decision.reason == Matcher.NOT_ALLOWED) EventQueue.unknownSite(q.name)
             }
             is Decision.NoData -> {
                 val r = DnsMessage.noData(payload, q)
@@ -259,7 +264,10 @@ class VeilVpnService : VpnService() {
             }
             is Decision.Rewrite -> rewrite(pkt, payload, q, decision.canonical)
             is Decision.AllowUnfiltered -> forward(pkt, payload, q, filtered = false)
-            is Decision.Allow -> forward(pkt, payload, q, filtered = store.upstreamFamilyFilter && store.adultListEnabled)
+            is Decision.Allow -> {
+                if (q.type == DnsMessage.TYPE_A || q.type == DnsMessage.TYPE_AAAA) EventQueue.unknownSite(q.name)
+                forward(pkt, payload, q, filtered = store.upstreamFamilyFilter && store.adultListEnabled)
+            }
         }
     }
 
@@ -330,6 +338,7 @@ class VeilVpnService : VpnService() {
     private fun onBlocked(host: String, d: Decision.Block) {
         store.countBlock()
         val fresh = BlockLog.record(host, d.reason, d.rule)
+        EventQueue.block(host, d.reason, d.rule)
         val now = System.currentTimeMillis()
         if (now - lastStatusUpdate > 15_000) { lastStatusUpdate = now; updateStatusNotification() }
         if (fresh && store.notifyOnBlock) {
@@ -356,9 +365,10 @@ class VeilVpnService : VpnService() {
         val text = if (running.get()) {
             if (today == 1L) "1 site blocked today" else "$today sites blocked today"
         } else "Starting…"
+        val admin = RemoteStore.get(this).let { if (it.isPaired) it.adminName.ifEmpty { "an admin" } else null }
         return Notification.Builder(this, VeilApp.CHANNEL_STATUS)
             .setSmallIcon(R.drawable.ic_stat_veil)
-            .setContentTitle("VEIL is protecting this phone")
+            .setContentTitle(if (admin != null) "VEIL is protecting this phone · managed by $admin" else "VEIL is protecting this phone")
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

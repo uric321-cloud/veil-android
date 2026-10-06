@@ -13,9 +13,16 @@ android {
         applicationId = "app.veil.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.3.0"
+
+        // The image model's runtime ships native code; ARM covers real phones.
+        // (On other CPUs image filtering switches itself off; everything else works.)
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
+
+    // The image model is memory-mapped from the APK, so it must not be compressed.
+    androidResources { noCompress += "tflite" }
 
     // Test-build signing key. Every build is signed with the same key so a new
     // build installs over the previous one. Replace with a proper upload key
@@ -56,7 +63,9 @@ kotlin {
     }
 }
 
-// No third-party dependencies on purpose: the whole app is Android framework +
-// Kotlin stdlib, which keeps the first builds simple and reviewable.
+// One third-party dependency, on purpose kept to this: the TensorFlow Lite
+// runtime for the on-device image model (Stage 4). Everything else is the
+// Android framework and the Kotlin stdlib.
 dependencies {
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 }
