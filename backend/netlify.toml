@@ -8,6 +8,12 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# Pairing links: /p/ABCD2345 shows a page that opens VEIL with the code filled in.
+[[redirects]]
+  from = "/p/*"
+  to = "/p.html"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]

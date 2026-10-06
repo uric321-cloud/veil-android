@@ -127,6 +127,13 @@ object Ui {
         isSingleLine = singleLine
         background = rounded(0xFFF2F4F7.toInt(), 10f, c)
         setPadding(dp(c, 12f), dp(c, 10f), dp(c, 12f), dp(c, 10f))
+        // Full width: fields stack in dialogs and cards. (A zero width with a weight
+        // only works inside a horizontal row; in a dialog it made the field invisible.)
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    /** A field that shares a horizontal row with a button, taking the remaining width. */
+    fun rowInput(c: Context, hint: String): EditText = input(c, hint).apply {
         layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
     }
 

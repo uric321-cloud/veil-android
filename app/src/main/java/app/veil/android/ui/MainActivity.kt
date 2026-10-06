@@ -69,10 +69,12 @@ class MainActivity : Activity() {
         render()
         requestNotificationPermissionIfNeeded()
         offerCrashReportIfAny()
+        handlePairLink(intent)
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (handlePairLink(intent)) return
         val tab = intent?.getStringExtra(EXTRA_TAB) ?: return
         if (tab in TABS) { currentTab = tab; render() }
     }
@@ -326,7 +328,7 @@ class MainActivity : Activity() {
         card.addView(Ui.caption(c, description))
         card.addView(Ui.space(c, 8f))
         val row = Ui.horizontal(c)
-        val input = Ui.input(c, hint)
+        val input = Ui.rowInput(c, hint)
         row.addView(input)
         row.addView(Ui.button(c, "Add") {
             val text = input.text.toString()
@@ -514,22 +516,68 @@ class MainActivity : Activity() {
         return card
     }
 
-    private fun pairDialog() {
-        val server = Ui.input(this, "Server, e.g. veil-admin.netlify.app")
-        val code = Ui.input(this, "Pairing code, e.g. ABCD-2345")
-        val wrap = Ui.vertical(this, 20f).apply { addView(server); addView(Ui.space(this@MainActivity, 8f)); addView(code) }
-        AlertDialog.Builder(this)
+    /**
+     * Pairing: the server is filled in already (the built-in admin server, or
+     * the one from a pairing link), so normally only the code is typed.
+     */
+    private fun pairDialog(serverPrefill: String = app.veil.android.BuildConfig.DEFAULT_SERVER, codePrefill: String = "") {
+        val c = this
+        val codeLabel = Ui.text(c, "Pairing code (from the admin website)", 13f, Ui.MUTED)
+        val code = Ui.input(c, "e.g. ABCD-2345").apply {
+            setText(codePrefill)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        }
+        val serverLabel = Ui.text(c, "Admin server (change only if your admin uses a different one)", 13f, Ui.MUTED)
+        val server = Ui.input(c, "veil-admin.netlify.app").apply {
+            setText(serverPrefill.removePrefix("https://"))
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+        val wrap = Ui.vertical(c, 20f).apply {
+            addView(codeLabel); addView(code); addView(Ui.space(c, 12f)); addView(serverLabel); addView(server)
+        }
+        val dialog = AlertDialog.Builder(c)
             .setTitle("Pair with an admin")
             .setMessage("Once paired, only your admin can change VEIL's settings. You can always see what they can see under Settings.")
             .setView(wrap)
-            .setPositiveButton("Pair") { _, _ ->
-                toast("Pairing…")
-                RemoteSync.pair(this, server.text.toString(), code.text.toString()) { err ->
-                    handler.post { toast(err ?: "Paired with ${adminName()}"); render() }
-                }
-            }
+            .setPositiveButton("Pair") { _, _ -> startPairing(server.text.toString(), code.text.toString()) }
             .setNegativeButton("Cancel", null)
-            .show()
+            .create()
+        // Show the keyboard straight away for the code.
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        dialog.show()
+        if (codePrefill.isEmpty()) code.requestFocus()
+    }
+
+    private fun startPairing(server: String, code: String) {
+        if (code.isBlank()) { toast("Enter the pairing code from the admin website"); return }
+        toast("Pairing…")
+        RemoteSync.pair(this, server.ifBlank { app.veil.android.BuildConfig.DEFAULT_SERVER }, code) { err ->
+            handler.post {
+                if (err != null) {
+                    AlertDialog.Builder(this).setTitle("Couldn't pair").setMessage(err).setPositiveButton("OK", null).show()
+                } else {
+                    toast("Paired with ${adminName()}")
+                }
+                render()
+            }
+        }
+    }
+
+    /** veil://pair?server=…&code=… from the dashboard's pairing link. Returns true if it was one. */
+    private fun handlePairLink(i: Intent?): Boolean {
+        val data = i?.data ?: return false
+        if (data.scheme != "veil" || data.host != "pair") return false
+        i.data = null // don't re-handle on rotation
+        val server = data.getQueryParameter("server").orEmpty().ifBlank { app.veil.android.BuildConfig.DEFAULT_SERVER }
+        val code = data.getQueryParameter("code").orEmpty()
+        currentTab = "settings"
+        render()
+        if (remote.isPaired) {
+            toast("This phone is already paired with ${adminName()}")
+            return true
+        }
+        pairDialog(server, code)
+        return true
     }
 
     private fun recoveryDialog() {

@@ -13,8 +13,11 @@ android {
         applicationId = "app.veil.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.3.1"
+
+        // The admin server phones pair with unless told otherwise (pairing links carry their own).
+        buildConfigField("String", "DEFAULT_SERVER", "\"https://veil-admin.netlify.app\"")
 
         // The image model's runtime ships native code; ARM covers real phones.
         // (On other CPUs image filtering switches itself off; everything else works.)
