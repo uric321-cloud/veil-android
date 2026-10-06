@@ -82,6 +82,15 @@ export interface DeviceConfig {
   apps: AppPolicy;
   /** In-app blocking: enabled catalog features (lib/inapp.ts) and the admin's own rules. */
   inApp: { enabled: string[]; custom: InAppRule[] };
+  /** Downtime / bedtime: when active, all non-essential apps are blocked on the phone. */
+  schedule: {
+    enabled: boolean;
+    /** Minutes since midnight. start >= end means the window crosses midnight. */
+    start: number;
+    end: number;
+    /** Days the window starts on: 0=Sunday .. 6=Saturday. */
+    days: number[];
+  };
 }
 
 export const APP_MODES = ["off", "blocklist", "allowlist"] as const;
@@ -163,6 +172,7 @@ export function defaultConfig(): DeviceConfig {
     // installed and approves the safe apps automatically.
     apps: { mode: "allowlist", allowed: [], blocked: [], approveNewApps: true },
     inApp: { enabled: [], custom: [] },
+    schedule: { enabled: false, start: 21 * 60, end: 7 * 60, days: [0, 1, 2, 3, 4, 5, 6] },
   };
 }
 
@@ -319,6 +329,15 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
       // VEIL itself can never be blocked; an app can't be on both lists (allowed wins).
       const blocked = packages(a.blocked, ba.blocked, [], ["app.veil.android"]).filter((x) => !allowed.includes(x));
       return { mode: oneOf(a.mode, APP_MODES, ba.mode), allowed, blocked, approveNewApps: bool(a.approveNewApps, ba.approveNewApps) };
+    })(),
+    schedule: (() => {
+      const sc = (p.schedule ?? {}) as Record<string, unknown>;
+      const bs = b.schedule ?? { enabled: false, start: 21 * 60, end: 7 * 60, days: [0, 1, 2, 3, 4, 5, 6] };
+      const minute = (v: unknown, fb: number) => { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n >= 0 && n < 1440 ? n : fb; };
+      const days = Array.isArray(sc.days)
+        ? [...new Set(sc.days.map((x) => Math.trunc(Number(x))).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort()
+        : bs.days;
+      return { enabled: bool(sc.enabled, bs.enabled), start: minute(sc.start, bs.start), end: minute(sc.end, bs.end), days };
     })(),
   };
 }
