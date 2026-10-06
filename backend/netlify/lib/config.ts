@@ -70,6 +70,7 @@ export interface DeviceConfig {
     /** Stage 4: cover explicit images on screen (on-device model, Android 11+). */
     images: boolean;
     imageStrictness: (typeof IMAGE_STRICTNESS)[number];
+    notifications: boolean;
   };
   lockdown: LockdownPolicy;
   apps: AppPolicy;
@@ -133,6 +134,7 @@ export function defaultConfig(): DeviceConfig {
       safeListApps: [...DEFAULT_SAFELIST],
       images: true,
       imageStrictness: "max",    // fail-closed: cover anything not clearly safe on a managed phone
+      notifications: true,       // cancel incoming notifications that contain blocked words
     },
     lockdown: {
       blockUninstall: true,
@@ -269,6 +271,7 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
       safeListApps: packages(s.safeListApps, b.screen.safeListApps),
       images: bool(s.images, b.screen.images ?? true),
       imageStrictness: oneOf(s.imageStrictness, IMAGE_STRICTNESS, b.screen.imageStrictness ?? "medium"),
+      notifications: bool(s.notifications, b.screen.notifications ?? true),
     },
     lockdown: {
       blockUninstall: true,

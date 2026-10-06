@@ -32,6 +32,7 @@ import app.veil.android.remote.RemoteSync
 import app.veil.android.rules.BlockLog
 import app.veil.android.rules.ListSource
 import app.veil.android.rules.RuleStore
+import app.veil.android.screen.VeilNotificationFilter
 import app.veil.android.vpn.VeilVpnService
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -214,6 +215,11 @@ class MainActivity : Activity() {
                 "Open") { open(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
             healthRow(card, "Can cover images and words on screen", Settings.canDrawOverlays(c),
                 "Open") { open(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) }
+        }
+
+        if (store.notificationFilter) {
+            healthRow(card, "Can block notifications with bad words", VeilNotificationFilter.enabled(c),
+                "Open") { open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         }
 
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -581,6 +587,12 @@ class MainActivity : Activity() {
             val card = Ui.card(c)
             card.addView(Ui.caption(c, "Let VEIL draw over other apps, so it can cover inappropriate words and images on the screen."))
             card.addView(Ui.wideButton(c, "Allow", filled = false) { open(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) })
+            col.addView(card)
+        }
+        if (store.notificationFilter && !VeilNotificationFilter.enabled(this)) {
+            val card = Ui.card(c)
+            card.addView(Ui.caption(c, "Let VEIL read notifications, so it can hide message alerts that contain inappropriate words before they show."))
+            card.addView(Ui.wideButton(c, "Allow", filled = false) { open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
             col.addView(card)
         }
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager

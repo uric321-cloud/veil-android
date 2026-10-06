@@ -758,7 +758,8 @@ function viewScreen(root, data) {
       h("div", { style: "padding:12px 0" }, h("label", { for: "tier" }, "Age tier"), tierSel),
       c.tier === "custom" ? h("div", {}, actionSel("customMild", "Mild words"), actionSel("customStrong", "Strong words"), actionSel("customExplicit", "Explicit words")) : null,
       switchRow("Warn and log only", "Log what would be covered without covering it.", c.logOnly, set("logOnly")),
-      switchRow("Catch disguised words", "Also catches s.p.a.c.e.d, l33t and stretched spellings. More false positives.", c.deobfuscate, set("deobfuscate"))),
+      switchRow("Catch disguised words", "Also catches s.p.a.c.e.d, l33t and stretched spellings. More false positives.", c.deobfuscate, set("deobfuscate")),
+      switchRow("Block notifications with bad words", "Hide a message/notification before it shows if its text contains a blocked word. The phone's user grants notification access once.", c.notifications !== false, set("notifications"))),
     (() => {
       const strict = h("select", { id: "imgstrict" }, [["low", "Only clearly explicit images"], ["medium", "Explicit images (recommended)"], ["high", "Explicit and suggestive images"], ["max", "Maximum – cover anything not clearly safe"]]
         .map(([v, l]) => h("option", { value: v, selected: v === (c.imageStrictness || "medium") }, l)));
