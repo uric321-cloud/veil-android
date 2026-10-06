@@ -18,6 +18,12 @@ export interface Admin {
   coAdmins?: string[];
   /** Owner admin ids whose phones this admin may also manage (granted by those owners). */
   managesFor?: string[];
+  /** Zero-knowledge escape hatch: the admin's ECDH public key (JWK). Safe to store. */
+  publicKey?: string;
+  /** The admin's private key, wrapped with a key derived from their password. The server CANNOT decrypt it. */
+  encPrivateKey?: string;
+  /** PBKDF2 salt for the wrapping key. */
+  keySalt?: string;
 }
 
 export interface DeviceStatus {
@@ -73,6 +79,8 @@ export interface Device {
   apps?: InstalledApp[];
   /** Accountability partner: emailed the daily digest and protection alerts for this phone. */
   partnerEmail?: string;
+  /** A private note the admin sealed to their own key; opaque to the server (zero-knowledge). */
+  secureNote?: string;
 }
 
 export interface InstalledApp {
@@ -642,6 +650,37 @@ export async function renameDevice(device: Device, name: string): Promise<Device
   const n = str(name, 60);
   if (!n) throw new HttpError(400, "Name can't be empty");
   device.name = n;
+  await saveDevice(device);
+  return device;
+}
+
+/**
+ * Stores the admin's encryption identity (public key + password-wrapped private
+ * key). Set once; the server never sees the password or the unwrapped key.
+ */
+export async function setAdminKeys(admin: Admin, keys: { publicKey: string; encPrivateKey: string; keySalt: string }): Promise<void> {
+  if (admin.publicKey) throw new HttpError(409, "An encryption key is already set for this account");
+  admin.publicKey = str(keys.publicKey, 4000);
+  admin.encPrivateKey = str(keys.encPrivateKey, 8000);
+  admin.keySalt = str(keys.keySalt, 200);
+  if (!admin.publicKey || !admin.encPrivateKey || !admin.keySalt) throw new HttpError(400, "Incomplete key material");
+  await kv().set(K.admin(admin.id), admin);
+}
+
+export function adminKeys(admin: Admin): { publicKey: string | null; encPrivateKey: string | null; keySalt: string | null } {
+  return { publicKey: admin.publicKey ?? null, encPrivateKey: admin.encPrivateKey ?? null, keySalt: admin.keySalt ?? null };
+}
+
+/** The public key of whoever owns a device, so the dashboard can seal items to them. */
+export async function deviceOwnerPublicKey(device: Device): Promise<string | null> {
+  const owner = await kv().get<Admin>(K.admin(device.adminId));
+  return owner?.publicKey ?? null;
+}
+
+/** Stores (or clears, with "") a per-device private note, already sealed in the admin's browser. */
+export async function setDeviceNote(device: Device, sealed: string): Promise<Device> {
+  const s = str(sealed, 20000);
+  device.secureNote = s || undefined;
   await saveDevice(device);
   return device;
 }
