@@ -69,7 +69,7 @@ class VeilAccessibilityService : AccessibilityService() {
         bgThread = HandlerThread("veil-screen").apply { start() }
         bgHandler = Handler(bgThread.looper)
         images = ImageScanner(this) { bgHandler.post(it) }
-        people = PersonScanner(this, { bgHandler.post(it) }) { rects ->
+        people = PersonScanner { rects ->
             personCovers = rects.map { Cover(it, TextAction.BAR) }
             applyCovers(baseCovers + images.covers.map { Cover(it, TextAction.BAR) } + personCovers)
         }
@@ -190,7 +190,7 @@ class VeilAccessibilityService : AccessibilityService() {
         // Nothing to do for this app: don't even read the screen (saves battery).
         val cp = currentPackage
         val imagesWanted = store.screenProtectionWanted && store.imageFilter && images.supported
-        val peopleWanted = store.screenProtectionWanted && store.imageFilter && store.blurPeople && (people?.supported == true)
+        val peopleWanted = store.screenProtectionWanted && store.imageFilter && store.blurPeople && images.supported
         val webWanted = store.screenProtectionWanted && (store.urlFilter || store.blockUnknownBrowsers)
         val browserHere = cp != null && (BrowserUrlReader.isSupportedBrowser(cp) || BrowserUrlReader.isKnownUnsupportedBrowser(cp))
         if (!(store.screenProtectionWanted && store.textEnabled) && !imagesWanted && !peopleWanted && !(webWanted && browserHere) &&
@@ -221,12 +221,9 @@ class VeilAccessibilityService : AccessibilityService() {
         val safe = pkg != null && pkg in store.safeListApps
         val textOn = store.screenProtectionWanted && store.textEnabled && !safe
         val eng = engine
-        if (imagesWanted && !safe) scanImages(root)
-        // Blur every person: its own screenshot, so it works even on browser
-        // pages where no image nodes are exposed. Staggered so it doesn't collide
-        // with the image classifier's screenshot.
-        if (peopleWanted && !safe) bgHandler.postDelayed({ people?.scan() }, 220)
-        else if (personCovers.isNotEmpty()) { personCovers = emptyList() }
+        // The image scan also drives the person-blur layer (one shared screenshot).
+        if ((imagesWanted || peopleWanted) && !safe) scanImages(root, blurPeople = peopleWanted)
+        else if (personCovers.isNotEmpty()) personCovers = emptyList()
         if (!textOn || eng == null) {
             publish(covers)
             return
@@ -264,7 +261,7 @@ class VeilAccessibilityService : AccessibilityService() {
         applyCovers(baseCovers + images.covers.map { Cover(it, TextAction.BAR) } + personCovers)
     }
 
-    private fun scanImages(root: android.view.accessibility.AccessibilityNodeInfo) {
+    private fun scanImages(root: android.view.accessibility.AccessibilityNodeInfo, blurPeople: Boolean) {
         val failClosed = store.imageStrictness == "max"
         // Max mode covers first and reveals only what the model clears, so it
         // also looks at smaller images and more of them per screen.
@@ -272,7 +269,10 @@ class VeilAccessibilityService : AccessibilityService() {
         val minSide = (dp * (if (failClosed) 40 else 72)).toInt()
         val maxRegions = if (failClosed) 20 else 12
         val regions = ImageScanner.regions(root, minSide, maxRegions)
-        images.scan(regions, store.imageStrictness, failClosed) { imageRects, newly ->
+        // One screenshot drives both layers: the image classifier and, via faceSink,
+        // the person-blur. faceSink runs even when there are no image regions.
+        val faceSink: ((android.graphics.Bitmap) -> Unit)? = if (blurPeople) { bmp -> people?.process(bmp) ?: bmp.recycle() } else null
+        images.scan(regions, store.imageStrictness, failClosed, faceSink) { imageRects, newly ->
             if (newly > 0) store.countImagesCovered(newly)
             applyCovers(baseCovers + imageRects.map { Cover(it, TextAction.BAR) } + personCovers)
         }
