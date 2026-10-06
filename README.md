@@ -26,6 +26,32 @@ number of phones, and can add **co-admins** (Phones page → *Team*): another
 existing admin, added by email, who can see and manage all your phones from
 their own account. They can't invite further co-admins or touch your account.
 
+### Data model: where identity lives vs. what's stored about activity
+
+VEIL keeps **identity** and **protection data** in separate worlds so that a
+breach of the protection data reveals nothing about who did what.
+
+- **Identity (the admin account).** The admin record holds what login needs -
+  an email, a display name, a salted password hash (`scrypt`) - plus the admin's
+  **public** encryption key and a password-wrapped private key the server can't
+  unwrap. Payment, when Stripe is added, lives in Stripe, not here. This is the
+  only place a real person's email/name is stored, and it is the *account
+  owner's* own identity, not the monitored user's.
+- **Protection data (per phone).** Each phone is a **random token** (`dev_…`,
+  plus a hashed auth token and a hashed recovery code - never the raw values).
+  Its record holds settings, a device label the admin chose, device model /
+  Android version, and **content-free** activity: block **counts by category**,
+  words/images-covered counts, and tamper flags. It never holds a site, URL,
+  keyword, message, photo or page the user saw - those are judged on the phone
+  and discarded (see *Content-free by design* below).
+- **The link between them** is only the random admin id on the device record. A
+  dump of the protection store is category counts against opaque tokens.
+- **Honest edges.** A device label is free text, so an admin could type a real
+  name ("Sam's phone"); name phones generically if that matters. An
+  accountability-partner email (opt-in) is stored so digests can be sent. The
+  one path that transmits a domain is opt-in AI site classification, which is
+  disclosed on the phone and not stored against the device.
+
 - **Install and pair (no erase).** VEIL installs like any app and is paired
   afterwards — no factory reset. The admin clicks *Add a phone* for a single-use
   code (30 minutes) and sends the pairing link (`/p/CODE`) to the phone; opening
