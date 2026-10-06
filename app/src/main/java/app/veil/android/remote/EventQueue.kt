@@ -75,6 +75,12 @@ object EventQueue {
         add(JSONObject().put("type", "text").put("at", System.currentTimeMillis()).put("count", count))
     }
 
+    @Synchronized
+    fun images(count: Long) {
+        if (!enabled || count <= 0) return
+        add(JSONObject().put("type", "image").put("at", System.currentTimeMillis()).put("count", count))
+    }
+
     /** A lookup no rule matched. Only the site's main name is kept (shop.example.co.uk -> example.co.uk). */
     @Synchronized
     fun unknownSite(host: String) {

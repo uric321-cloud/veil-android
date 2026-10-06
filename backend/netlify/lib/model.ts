@@ -26,6 +26,8 @@ export interface DeviceStatus {
   blockedToday?: number;
   blockedTotal?: number;
   textCoveredTotal?: number;
+  imagesCoveredTotal?: number;
+  imageFilterSupported?: boolean;
   androidVersion?: string;
   model?: string;
 }
@@ -70,7 +72,7 @@ export interface InstalledApp {
 }
 
 export interface DeviceEvent {
-  type: "block" | "tamper" | "text" | "info";
+  type: "block" | "tamper" | "text" | "image" | "info";
   at: number;
   host?: string;
   reason?: string;
@@ -313,6 +315,8 @@ function sanitizeStatus(s: unknown): DeviceStatus {
     blockedToday: n("blockedToday"),
     blockedTotal: n("blockedTotal"),
     textCoveredTotal: n("textCoveredTotal"),
+    imagesCoveredTotal: n("imagesCoveredTotal"),
+    imageFilterSupported: b("imageFilterSupported"),
     androidVersion: str(o.androidVersion, 20),
     model: str(o.model, 80),
   };
@@ -454,7 +458,7 @@ function cleanEvent(e: unknown): DeviceEvent | null {
   const o = (e && typeof e === "object" ? e : null) as Record<string, unknown> | null;
   if (!o) return null;
   const type = o.type;
-  if (type !== "block" && type !== "tamper" && type !== "text" && type !== "info") return null;
+  if (type !== "block" && type !== "tamper" && type !== "text" && type !== "image" && type !== "info") return null;
   const at = Number(o.at);
   return {
     type,

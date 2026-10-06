@@ -199,6 +199,7 @@ export function aggregateEvents(events: DeviceEvent[]) {
   const blocksByReason = new Map<string, number>();
   const byHour = new Array(24).fill(0) as number[];
   let textCovered = 0;
+  let imagesCovered = 0;
   const tamper: { at: string; rule: string; detail: string }[] = [];
   for (const e of events) {
     const n = e.count ?? 1;
@@ -210,6 +211,8 @@ export function aggregateEvents(events: DeviceEvent[]) {
       byHour[new Date(e.at).getUTCHours()] += n;
     } else if (e.type === "text") {
       textCovered += n;
+    } else if (e.type === "image") {
+      imagesCovered += n;
     } else if (e.type === "tamper") {
       tamper.push({ at: new Date(e.at).toISOString(), rule: e.rule ?? "", detail: e.detail ?? "" });
     }
@@ -220,6 +223,7 @@ export function aggregateEvents(events: DeviceEvent[]) {
     blocksByReason: Object.fromEntries(blocksByReason),
     blocksByUtcHour: byHour,
     textCovered,
+    imagesCovered,
     tamper: tamper.slice(0, 50),
   };
 }

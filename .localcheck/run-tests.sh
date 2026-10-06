@@ -3,7 +3,7 @@
 # Needs only a JDK (17+), curl and unzip: the first run downloads the Kotlin
 # compiler and a public android.jar (compile-time only) into $VEIL_TOOLS.
 #
-#   .localcheck/run-tests.sh          offline tests: EngineTest, TextEngineTest, InAppTest
+#   .localcheck/run-tests.sh          offline tests: Engine, TextEngine, InApp, Image
 #   .localcheck/run-tests.sh --live   also UpstreamTest (real DNS lookups; prints
 #                                     results to read, no pass/fail)
 set -euo pipefail
@@ -13,7 +13,7 @@ KOTLIN_VERSION=2.1.21   # keep in step with the Kotlin plugin in build.gradle.kt
 OUT=$ROOT/.localcheck/testout
 J=$ROOT/app/src/main/java/app/veil/android
 
-TESTS=(Engine TextEngine InApp)
+TESTS=(Engine TextEngine InApp Image)
 [ "${1:-}" = "--live" ] && TESTS+=(Upstream)
 
 # Sources each test compiles against, besides the test file itself.
@@ -22,6 +22,7 @@ sources() {
         Engine) echo "$J/dns/DnsMessage.kt $J/rules/Matcher.kt $J/rules/RuleStore.kt $J/rules/ListSource.kt $J/VeilLog.kt $J/screen/TextRuleEngine.kt $J/vpn/Packets.kt" ;;
         TextEngine) echo "$J/screen/TextRuleEngine.kt $J/screen/Tiers.kt" ;;
         InApp) echo "$J/screen/InAppMatch.kt" ;;
+        Image) echo "$J/screen/ImageVerdict.kt" ;;
         Upstream) echo "$J/dns/DnsMessage.kt $J/dns/Upstream.kt $J/VeilLog.kt" ;;
     esac
 }

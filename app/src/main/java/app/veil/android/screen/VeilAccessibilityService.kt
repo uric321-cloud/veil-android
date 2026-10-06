@@ -36,6 +36,9 @@ class VeilAccessibilityService : AccessibilityService() {
     private lateinit var bgHandler: Handler
 
     @Volatile private var currentPackage: String? = null
+    private lateinit var images: ImageScanner
+    /** Text and in-app covers from the last scan; image covers are added on top as they arrive. */
+    @Volatile private var baseCovers: List<Cover> = emptyList()
     @Volatile private var screenOn = true
 
     private val scanRunnable = Runnable { doScan() }
@@ -62,6 +65,7 @@ class VeilAccessibilityService : AccessibilityService() {
         overlay = OverlayController(this)
         bgThread = HandlerThread("veil-screen").apply { start() }
         bgHandler = Handler(bgThread.looper)
+        images = ImageScanner(this) { bgHandler.post(it) }
         screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         bgHandler.post { rebuildEngine() }
         store.registerListener(prefsListener)
@@ -82,6 +86,10 @@ class VeilAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED || event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            // What's under each image rectangle changed; look again.
+            if (this::images.isInitialized) images.reset()
+        }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             event.packageName?.let {
                 currentPackage = it.toString()
@@ -115,7 +123,8 @@ class VeilAccessibilityService : AccessibilityService() {
         if (!screenOn) { clearOverlay(); return }
         // Nothing to do for this app: don't even read the screen (saves battery).
         val cp = currentPackage
-        if (!(store.screenProtectionWanted && store.textEnabled) && (cp == null || InAppRules.forApp(this, cp).isEmpty())) { clearOverlay(); return }
+        val imagesWanted = store.screenProtectionWanted && store.imageFilter && images.supported
+        if (!(store.screenProtectionWanted && store.textEnabled) && !imagesWanted && (cp == null || InAppRules.forApp(this, cp).isEmpty())) { clearOverlay(); return }
         val root = try { rootInActiveWindow } catch (_: Throwable) { null } ?: run { clearOverlay(); return }
         val pkg = root.packageName?.toString() ?: currentPackage
         val covers = ArrayList<Cover>()
@@ -135,11 +144,12 @@ class VeilAccessibilityService : AccessibilityService() {
             }
         }
 
-        val textOn = store.screenProtectionWanted && store.textEnabled && (pkg == null || pkg !in store.safeListApps)
+        val safe = pkg != null && pkg in store.safeListApps
+        val textOn = store.screenProtectionWanted && store.textEnabled && !safe
         val eng = engine
+        if (imagesWanted && !safe) scanImages(root)
         if (!textOn || eng == null) {
-            val finalCovers = dedupe(covers)
-            mainHandler.post { overlay.update(finalCovers) }
+            publish(covers)
             return
         }
 
@@ -156,8 +166,24 @@ class VeilAccessibilityService : AccessibilityService() {
             }
         }
         if (count > 0) store.countTextCovered(count)
-        val finalCovers = dedupe(covers)
-        mainHandler.post { overlay.update(finalCovers) }
+        publish(covers)
+    }
+
+    /** Shows text/in-app covers plus the image covers currently known. */
+    private fun publish(base: List<Cover>) {
+        baseCovers = dedupe(base)
+        val all = baseCovers + images.covers.map { Cover(it, TextAction.BAR) }
+        mainHandler.post { overlay.update(all) }
+    }
+
+    private fun scanImages(root: android.view.accessibility.AccessibilityNodeInfo) {
+        val minSide = (resources.displayMetrics.density * 72).toInt()
+        val regions = ImageScanner.regions(root, minSide)
+        images.scan(regions, store.imageStrictness) { imageRects, newly ->
+            if (newly > 0) store.countImagesCovered(newly)
+            val all = baseCovers + imageRects.map { Cover(it, TextAction.BAR) }
+            mainHandler.post { overlay.update(all) }
+        }
     }
 
     /** Approximate the flagged word's rectangle inside a single-line node; fall back to the whole node. */
@@ -206,6 +232,7 @@ class VeilAccessibilityService : AccessibilityService() {
         try { store.unregisterListener(prefsListener) } catch (_: Throwable) {}
         try { unregisterReceiver(screenReceiver) } catch (_: Throwable) {}
         mainHandler.post { overlay.hide() }
+        if (this::images.isInitialized) bgHandler.post { images.close() }
         if (this::bgThread.isInitialized) bgThread.quitSafely()
         VeilLog.i("Accessibility service torn down")
     }

@@ -147,6 +147,9 @@ object RemoteSync {
         val covered = store.textCoveredTotal
         if (r.lastTextCovered in 0 until covered) EventQueue.text(covered - r.lastTextCovered)
         r.lastTextCovered = covered
+        val imgs = store.imagesCoveredTotal
+        if (r.lastImagesCovered in 0 until imgs) EventQueue.images(imgs - r.lastImagesCovered)
+        r.lastImagesCovered = imgs
 
         val (events, unknown) = EventQueue.drain()
         val requests = r.requests()
@@ -248,6 +251,8 @@ object RemoteSync {
             .put("blockedToday", s.blockedToday)
             .put("blockedTotal", s.blockedTotal)
             .put("textCoveredTotal", s.textCoveredTotal)
+            .put("imagesCoveredTotal", s.imagesCoveredTotal)
+            .put("imageFilterSupported", Build.VERSION.SDK_INT >= 30)
             .put("androidVersion", Build.VERSION.RELEASE ?: "")
             .put("model", "${Build.MANUFACTURER} ${Build.MODEL}")
     }

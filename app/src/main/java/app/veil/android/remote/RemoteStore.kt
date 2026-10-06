@@ -81,6 +81,10 @@ class RemoteStore private constructor(context: Context) {
         get() = prefs.getString("apps_hash", "") ?: ""
         set(v) = prefs.edit().putString("apps_hash", v).apply()
 
+    var lastImagesCovered: Long
+        get() = prefs.getLong("last_images_covered", -1)
+        set(v) = prefs.edit().putLong("last_images_covered", v).apply()
+
     var lastTextCovered: Long
         get() = prefs.getLong("last_text_covered", -1)
         set(v) = prefs.edit().putLong("last_text_covered", v).apply()

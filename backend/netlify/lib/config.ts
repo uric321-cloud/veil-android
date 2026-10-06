@@ -11,6 +11,7 @@ export { PACKAGE_RE };
 
 export const TIERS = ["young_child", "child", "teen", "adult", "custom"] as const;
 export const TEXT_ACTIONS = ["ignore", "strike", "bar", "frost"] as const;
+export const IMAGE_STRICTNESS = ["low", "medium", "high"] as const;
 export const WEB_MODES = ["filter", "allowlist"] as const;
 export const AUTO_APPROVE = ["off", "low_risk"] as const;
 export const LEVELS = ["custom", "open", "standard", "strict", "allowlist"] as const;
@@ -66,6 +67,9 @@ export interface DeviceConfig {
     blockWords: string[];
     allowWords: string[];
     safeListApps: string[];
+    /** Stage 4: cover explicit images on screen (on-device model, Android 11+). */
+    images: boolean;
+    imageStrictness: (typeof IMAGE_STRICTNESS)[number];
   };
   lockdown: LockdownPolicy;
   apps: AppPolicy;
@@ -127,6 +131,8 @@ export function defaultConfig(): DeviceConfig {
       blockWords: [],
       allowWords: [],
       safeListApps: [...DEFAULT_SAFELIST],
+      images: true,
+      imageStrictness: "medium",
     },
     lockdown: {
       blockUninstall: true,
@@ -257,6 +263,8 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
       blockWords: words(s.blockWords, b.screen.blockWords, 2),
       allowWords: words(s.allowWords, b.screen.allowWords, 2),
       safeListApps: packages(s.safeListApps, b.screen.safeListApps),
+      images: bool(s.images, b.screen.images ?? true),
+      imageStrictness: oneOf(s.imageStrictness, IMAGE_STRICTNESS, b.screen.imageStrictness ?? "medium"),
     },
     lockdown: {
       blockUninstall: true,

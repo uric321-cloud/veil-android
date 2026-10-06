@@ -57,6 +57,27 @@ number of phones.
   Every change, from the dashboard or the assistant, goes through the same
   validation (`backend/netlify/lib/config.ts`).
 
+### Beyond site filtering (0.3.0)
+
+- **App control** (Apps tab): off, block chosen apps, or only allowed apps, plus
+  "new apps need approval". Device Owner phones suspend blocked apps; others close
+  them through the accessibility service. Essentials (launcher, phone, SMS,
+  keyboard, Settings, VEIL) are never blocked. Users can ask for an app.
+- **In-app blocking**: switch off WhatsApp Status/Channels and profile photos,
+  YouTube Shorts/search/comments, Instagram Reels/Explore, Maps photos, the Google
+  Discover feed and more, or add custom rules. Rules live in
+  `backend/netlify/lib/inapp.ts` and reach phones on check-in, so they can be
+  fixed when an app changes without shipping a new APK.
+- **Filter levels**: Open, Standard, Strict, Allowed sites only. In allowed-sites-
+  only mode, sites the AI is confident are education, government, banking,
+  health or app infrastructure open on their own; low-risk requests can be
+  auto-approved.
+- **Image filtering** (Android 11+): an on-device MobileNetV2 model (from nsfwjs,
+  MIT, see `app/src/main/assets/models/NOTICE.txt`) checks image areas in
+  accessibility screenshots and covers explicit ones. Nothing leaves the phone.
+  Rebuild notes: the model was rebuilt in Keras from the nsfwjs weights and
+  exported to TFLite; outputs match the original within 0.007.
+
 ### Running the backend
 
 | Setting (Netlify environment variables) | Purpose |

@@ -392,6 +392,7 @@ function viewOverview(root, data) {
       h("dt", {}, "Private DNS"), h("dd", {}, s.privateDns ? pill("bad", s.privateDns) : "Not set"),
       h("dt", {}, "Blocked today / total"), h("dd", {}, `${s.blockedToday ?? "–"} / ${s.blockedTotal ?? "–"}`),
       h("dt", {}, "Words covered on screen"), h("dd", {}, s.textCoveredTotal ?? "–"),
+      h("dt", {}, "Images covered"), h("dd", {}, s.imagesCoveredTotal ?? "–"),
       h("dt", {}, "Phone"), h("dd", {}, [s.model, s.androidVersion && `Android ${s.androidVersion}`].filter(Boolean).join(" · ") || "–")));
 
   const summary = data.summary;
@@ -591,7 +592,7 @@ async function viewActivity(root, data) {
         h("section", { class: "card" }, h("h2", {}, "By hour of day"),
           h("div", { class: "bars", role: "img", "aria-label": "Blocked lookups by hour of day" }, local.map((n) => h("div", { style: `height:${Math.round((n / max) * 100)}%`, title: String(n) }))),
           h("div", { class: "bars-axis" }, h("span", {}, "0:00"), h("span", {}, "6:00"), h("span", {}, "12:00"), h("span", {}, "18:00"), h("span", {}, "23:00")),
-          h("p", { class: "muted small" }, `Words covered on screen: ${st.textCovered}`))),
+          h("p", { class: "muted small" }, `Words covered on screen: ${st.textCovered} · Images covered: ${st.imagesCovered ?? 0}`))),
       h("section", { class: "card" }, h("h2", {}, "Most blocked sites"),
         st.topBlockedHosts.length ? h("ul", { class: "list" }, st.topBlockedHosts.map((x) => h("li", { class: "spread" },
           h("div", {}, h("span", { class: "host" }, x.host), h("div", { class: "muted small" }, x.reason)),
@@ -698,6 +699,17 @@ function viewScreen(root, data) {
       c.tier === "custom" ? h("div", {}, actionSel("customMild", "Mild words"), actionSel("customStrong", "Strong words"), actionSel("customExplicit", "Explicit words")) : null,
       switchRow("Warn and log only", "Log what would be covered without covering it.", c.logOnly, set("logOnly")),
       switchRow("Catch disguised words", "Also catches s.p.a.c.e.d, l33t and stretched spellings. More false positives.", c.deobfuscate, set("deobfuscate"))),
+    (() => {
+      const strict = h("select", { id: "imgstrict" }, [["low", "Only clearly explicit images"], ["medium", "Explicit images (recommended)"], ["high", "Explicit and suggestive images"]]
+        .map(([v, l]) => h("option", { value: v, selected: v === (c.imageStrictness || "medium") }, l)));
+      strict.addEventListener("change", () => patchConfig({ screen: { imageStrictness: strict.value } }).catch((e) => toast(e.message)));
+      const supported = data.device.status.imageFilterSupported;
+      return h("section", { class: "card" }, h("h2", {}, "Images"),
+        h("p", { class: "muted small" }, "An on-device model checks the images on screen and covers explicit ones, in any app or browser. Images never leave the phone. Needs Android 11 or newer and VEIL's screen filter (accessibility) on."),
+        supported === false ? h("div", { class: "banner warn" }, "This phone runs an Android version older than 11, so image covering isn't available on it.") : null,
+        switchRow("Cover explicit images", null, c.images !== false, set("images")),
+        h("div", { style: "padding:12px 0" }, h("label", { for: "imgstrict" }, "What to cover"), strict));
+    })(),
     listEditor("Extra words to cover", "Single words, at least 2 letters.", c.blockWords, "word", (v) => patchConfig({ screen: { blockWords: v } })),
     listEditor("Never cover", "Words the filter should leave alone.", c.allowWords, "word", (v) => patchConfig({ screen: { allowWords: v } })),
     listEditor("Apps skipped", "Android package names the screen filter never reads (VEIL itself is always skipped).", c.safeListApps, "com.example.app", (v) => patchConfig({ screen: { safeListApps: v } })));

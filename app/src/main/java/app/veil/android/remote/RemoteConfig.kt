@@ -51,6 +51,8 @@ object RemoteConfig {
             str(sc, "customMild", actions) { if (s.customMild != it) s.customMild = it }
             str(sc, "customStrong", actions) { if (s.customStrong != it) s.customStrong = it }
             str(sc, "customExplicit", actions) { if (s.customExplicit != it) s.customExplicit = it }
+            bool(sc, "images") { if (s.imageFilter != it) s.imageFilter = it }
+            str(sc, "imageStrictness", setOf("low", "medium", "high")) { if (s.imageStrictness != it) s.imageStrictness = it }
             strings(sc, "blockWords") { if (s.textBlockWords != it) s.textBlockWords = it }
             strings(sc, "allowWords") { if (s.textAllowWords != it) s.textAllowWords = it }
             strings(sc, "safeListApps", lowercase = false) { v -> val n = v + context.packageName; if (s.safeListApps != n) s.safeListApps = n }
