@@ -285,6 +285,15 @@ function showPairing(body, res) {
     h("div", { class: "banner info" },
       h("div", { class: "muted small" }, `Pairing code · expires ${new Date(res.expires).toLocaleTimeString([], { timeStyle: "short" })}`),
       h("div", { class: "code" }, pretty)),
+    (() => {
+      const link = `${res.server}/p/${res.code}`;
+      return h("div", { class: "stack" },
+        h("h3", {}, "Easiest: send this link to the phone"),
+        h("p", { class: "muted small" }, "Send it by WhatsApp, SMS or email. On the phone (with VEIL installed), open the link and tap “Open VEIL and pair”."),
+        h("div", { class: "row" },
+          h("input", { type: "text", readonly: true, value: link, "aria-label": "Pairing link", style: "flex:1;min-width:200px", onclick: (e) => e.target.select() }),
+          button("Copy link", async () => { await navigator.clipboard.writeText(link); toast("Link copied"); }, "secondary small")));
+    })(),
     h("h3", {}, "Option A: full lockdown (Device Owner) - recommended"),
     h("p", { class: "muted small" },
       "Needs a phone that has just been factory reset (no Google account yet). On the first Welcome screen, tap the screen six times in the same spot to open the QR scanner, connect to Wi-Fi, then scan this code. ",
@@ -296,7 +305,7 @@ function showPairing(body, res) {
       h("p", { class: "muted small" }, `Then open VEIL on the phone and enter the server ${res.server} and code ${pretty}.`)),
     h("h3", {}, "Option B: pair without lockdown"),
     h("p", { class: "muted small" },
-      `On a phone that already has VEIL: open VEIL → Settings → Pair with an admin, enter the server ${res.server} and the code above. `,
+      `On a phone that already has VEIL: open the link above, or open VEIL → Settings → Pair with an admin and type the code (the server ${res.server.replace("https://", "")} is filled in already). `,
       "You'll control VEIL's settings, but the phone's user could still uninstall it (you'd get an alert when it stops checking in)."),
   );
   // Low error correction keeps the dense provisioning payload scannable.

@@ -212,7 +212,7 @@ class ScreenFilterActivity : Activity() {
         card.addView(Ui.caption(c, help))
         card.addView(Ui.space(c, 8f))
         val row = Ui.horizontal(c)
-        val input = Ui.input(c, "word")
+        val input = Ui.rowInput(c, "word")
         row.addView(input)
         row.addView(Ui.button(c, "Add") {
             withPin({

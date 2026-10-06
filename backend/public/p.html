@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pair with VEIL</title>
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="container" style="max-width:480px">
+    <section class="card stack" style="margin-top:24px">
+      <h1>Pair this phone</h1>
+      <p class="muted">Your admin sent you this link to connect VEIL on this phone to their dashboard.</p>
+      <div class="banner info">
+        <div class="muted small">Pairing code</div>
+        <div class="code" id="code">…</div>
+      </div>
+      <a id="open" class="btn" style="display:block;text-align:center;text-decoration:none;padding:14px">Open VEIL and pair</a>
+      <p class="muted small">Tap the button on the phone that has VEIL installed. VEIL opens with the code filled in; tap <strong>Pair</strong>.</p>
+      <details>
+        <summary class="small">VEIL isn't installed yet</summary>
+        <p class="small"><a href="https://github.com/uric321-cloud/veil-android/releases/latest/download/VEIL.apk">Download VEIL</a>, open the file to install it, then come back to this page and tap the button again.</p>
+      </details>
+      <details>
+        <summary class="small">The button doesn't open VEIL</summary>
+        <p class="small">Open VEIL → Settings → Pair with an admin, and type the code above. The server is already filled in.</p>
+      </details>
+    </section>
+  </main>
+  <script>
+    // Code from /p/ABCD2345; only letters and digits pass through.
+    const code = (location.pathname.split("/").pop() || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+    document.getElementById("code").textContent = code.length === 8 ? code.slice(0, 4) + "-" + code.slice(4) : (code || "missing");
+    const link = "veil://pair?server=" + encodeURIComponent(location.origin) + "&code=" + encodeURIComponent(code);
+    document.getElementById("open").href = link;
+  </script>
+</body>
+</html>
