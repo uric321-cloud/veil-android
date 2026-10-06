@@ -91,6 +91,8 @@ export interface DeviceConfig {
     /** Days the window starts on: 0=Sunday .. 6=Saturday. */
     days: number[];
   };
+  /** Per-app daily time limits: the app is blocked once it reaches `minutes` of use that day. */
+  appLimits: { package: string; minutes: number }[];
 }
 
 export const APP_MODES = ["off", "blocklist", "allowlist"] as const;
@@ -173,6 +175,7 @@ export function defaultConfig(): DeviceConfig {
     apps: { mode: "allowlist", allowed: [], blocked: [], approveNewApps: true },
     inApp: { enabled: [], custom: [] },
     schedule: { enabled: false, start: 21 * 60, end: 7 * 60, days: [0, 1, 2, 3, 4, 5, 6] },
+    appLimits: [],
   };
 }
 
@@ -338,6 +341,20 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
         ? [...new Set(sc.days.map((x) => Math.trunc(Number(x))).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort()
         : bs.days;
       return { enabled: bool(sc.enabled, bs.enabled), start: minute(sc.start, bs.start), end: minute(sc.end, bs.end), days };
+    })(),
+    appLimits: (() => {
+      const raw = Array.isArray(p.appLimits) ? p.appLimits : b.appLimits ?? [];
+      const out: { package: string; minutes: number }[] = [];
+      const seen = new Set<string>();
+      for (const x of raw) {
+        const pkg = String((x as { package?: unknown })?.package ?? "").trim().slice(0, 200);
+        const minutes = Math.trunc(Number((x as { minutes?: unknown })?.minutes));
+        if (!PACKAGE_RE.test(pkg) || seen.has(pkg) || !Number.isFinite(minutes) || minutes < 0 || minutes > 1440) continue;
+        seen.add(pkg);
+        out.push({ package: pkg, minutes });
+        if (out.length >= MAX_LIST) break;
+      }
+      return out;
     })(),
   };
 }

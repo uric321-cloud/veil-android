@@ -12,6 +12,10 @@
     <!-- Screen filter (Stage 1): overlay to cover flagged content -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- Per-app daily time limits: read foreground usage (user grants usage access). -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
     <!-- App control: see which launchable apps are installed (Android 11+ package visibility). -->
     <queries>
         <intent>

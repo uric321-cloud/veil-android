@@ -255,6 +255,15 @@ class RuleStore private constructor(context: Context) {
         get() = prefs.getStringSet(K_DT_DAYS, setOf("0", "1", "2", "3", "4", "5", "6")) ?: emptySet()
         set(v) = prefs.edit().putStringSet(K_DT_DAYS, v.toSet()).apply()
 
+    /** Per-app daily limits: package -> minutes allowed per day. Blocks the app once reached. */
+    var appTimeLimits: Map<String, Int>
+        get() = (prefs.getStringSet(K_APP_LIMITS, emptySet()) ?: emptySet()).mapNotNull {
+            val i = it.lastIndexOf(':'); if (i <= 0) return@mapNotNull null
+            val pkg = it.substring(0, i); val m = it.substring(i + 1).toIntOrNull() ?: return@mapNotNull null
+            pkg to m
+        }.toMap()
+        set(v) = prefs.edit().putStringSet(K_APP_LIMITS, v.entries.map { "${it.key}:${it.value}" }.toSet()).apply()
+
     val imagesCoveredTotal: Long get() = prefs.getLong(K_IMAGE_TOTAL, 0)
     fun countImagesCovered(n: Int) {
         if (n <= 0) return
@@ -406,6 +415,7 @@ class RuleStore private constructor(context: Context) {
         const val K_DT_START = "downtime_start"
         const val K_DT_END = "downtime_end"
         const val K_DT_DAYS = "downtime_days"
+        const val K_APP_LIMITS = "app_time_limits"
         const val K_IMAGE_STRICT = "image_strictness"
         const val K_IMAGE_TOTAL = "images_covered_total"
 

@@ -73,6 +73,17 @@ object RemoteConfig {
             }
         }
 
+        c.optJSONArray("appLimits")?.let { arr ->
+            val map = HashMap<String, Int>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val pkg = o.optString("package", "").trim()
+                val min = o.optInt("minutes", -1)
+                if (pkg.isNotEmpty() && min in 0..1440) map[pkg] = min
+            }
+            if (s.appTimeLimits != map) s.appTimeLimits = map
+        }
+
         c.optJSONObject("lockdown")?.let { DeviceOwner.applyPolicy(context, DeviceOwner.Policy.from(it)) }
         c.optJSONObject("apps")?.let { app.veil.android.apps.AppControl.setPolicy(context, app.veil.android.apps.AppControl.Policy.from(it)) }
     }
