@@ -62,6 +62,8 @@ export interface Device {
   state: "active" | "releasing" | "released";
   /** Set when we alerted the admin that this phone went silent; cleared on next check-in. */
   silentAlerted?: boolean;
+  /** Packages the AI has already classified, so they aren't re-classified every check-in. */
+  aiClassifiedApps?: string[];
   /** Launchable apps on the phone, for the admin's Apps tab. Sent only when it changes. */
   apps?: InstalledApp[];
 }
@@ -127,7 +129,7 @@ export interface Classification {
 
 export interface Job {
   id: string;
-  kind: "review" | "classify" | "summary" | "chat";
+  kind: "review" | "classify" | "classify_apps" | "summary" | "chat";
   status: "queued" | "done" | "error";
   payload: Record<string, unknown>;
   result?: unknown;
@@ -359,6 +361,8 @@ export interface SyncResult {
   };
   reviewRequestIds: string[];
   classifyDomains: string[];
+  /** Installed apps not yet classified, to send to the AI (allow-list mode only). */
+  classifyApps: { package: string; label: string }[];
 }
 
 const TAMPER_LABELS: Record<string, string> = {
@@ -419,6 +423,20 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
     reviewRequestIds.push(rid);
   }
 
+  // Apps not yet decided, for AI classification (only matters in allow-list mode).
+  const classifyApps: { package: string; label: string }[] = [];
+  if (device.config.apps?.mode === "allowlist" && device.apps?.length) {
+    const classified = new Set(device.aiClassifiedApps ?? []);
+    const allowed = new Set(device.config.apps.allowed);
+    const blocked = new Set(device.config.apps.blocked);
+    const pendingApps = new Set((await listRequests(device.id, 60)).filter((r) => r.kind === "app" && r.status === "pending").map((r) => r.host));
+    for (const a of device.apps) {
+      if (classified.has(a.package) || allowed.has(a.package) || blocked.has(a.package) || pendingApps.has(a.package)) continue;
+      classifyApps.push({ package: a.package, label: a.label });
+      if (classifyApps.length >= 200) break;
+    }
+  }
+
   // Sites the phone saw that no list covers, for AI classification
   const classifyDomains: string[] = [];
   if (device.config.aiClassification && Array.isArray(input.unknownDomains)) {
@@ -459,6 +477,7 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
     },
     reviewRequestIds,
     classifyDomains,
+    classifyApps,
   };
 }
 
@@ -617,6 +636,47 @@ export async function decideRequest(device: Device, requestId: string, approve: 
 
 export async function getClassification(domain: string): Promise<Classification | null> {
   return kv().get<Classification>(K.classify(domain));
+}
+
+export interface AppDecision { package: string; decision: "allow" | "block" | "ask"; category: string; reason: string; }
+
+/**
+ * Applies the AI's verdict on installed apps (allow-list mode). Safe apps are
+ * approved automatically; unsure ones become pending "approve this app?"
+ * requests for the admin; unsafe ones stay blocked (just not on the allow list).
+ * Every app handled is marked classified so it is not reviewed again.
+ */
+export async function recordAppClassification(deviceId: string, results: AppDecision[]): Promise<{ approved: number; asked: number; blocked: number }> {
+  const device = await kv().get<Device>(K.device(deviceId));
+  if (!device) return { approved: 0, asked: 0, blocked: 0 };
+  const classified = new Set(device.aiClassifiedApps ?? []);
+  const apps = device.config.apps ?? defaultConfig().apps;
+  const allowed = new Set(apps.allowed);
+  const labelOf = new Map((device.apps ?? []).map((a) => [a.package, a.label] as const));
+  let approved = 0, asked = 0, blocked = 0;
+  const now = Date.now();
+  for (const r of results) {
+    if (!PACKAGE_RE.test(r.package) || !labelOf.has(r.package)) continue;
+    classified.add(r.package);
+    if (r.decision === "allow") { allowed.add(r.package); approved++; }
+    else if (r.decision === "ask") {
+      const rid = `req_${sha256(`${deviceId}:appclass:${r.package}`).slice(0, 16)}`;
+      if (!(await kv().get(K.request(deviceId, rid)))) {
+        const req: UnblockRequest = {
+          id: rid, deviceId, localId: `appclass:${r.package}`, kind: "app", host: r.package,
+          label: labelOf.get(r.package), reason: "Installed on the phone — needs your review.",
+          createdAt: now, status: "pending", escalated: true,
+          ai: { recommendation: "deny", suggestedMinutes: 0, category: r.category, risk: "medium", explanation: r.reason, needsHuman: true },
+        };
+        await kv().set(K.request(deviceId, rid), req);
+        asked++;
+      }
+    } else blocked++;
+  }
+  device.aiClassifiedApps = [...classified].slice(-2000);
+  await kv().set(K.device(device.id), device);
+  if (approved > 0) await updateConfig(device, { apps: { allowed: [...allowed] } });
+  return { approved, asked, blocked };
 }
 
 export async function saveClassifications(list: Classification[]): Promise<void> {

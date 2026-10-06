@@ -231,6 +231,7 @@ async function renderDevices() {
   const head = h("div", { class: "spread" },
     h("div", {}, h("h1", {}, "Phones"), h("p", { class: "muted" }, "Phones running VEIL that you manage.")),
     button("Add a phone", async () => addPhoneDialog()));
+  const search = h("input", { type: "text", placeholder: "Search by name or client ID", "aria-label": "Search phones", style: "max-width:360px;margin:4px 0 12px" });
   const banner = data.aiConfigured ? null : h("div", { class: "banner info" },
     h("strong", {}, "AI features are off. "),
     "Add an ANTHROPIC_API_KEY environment variable to this Netlify site to turn on request review, site classification, reports and the assistant.");
@@ -241,13 +242,19 @@ async function renderDevices() {
   },
     h("div", { class: "spread" }, h("h2", {}, d.name), deviceHealth(d)),
     h("dl", { class: "kv", style: "margin-top:12px" },
+      h("dt", {}, "Client ID"), h("dd", {}, h("code", { class: "small" }, d.id)),
       h("dt", {}, "Last check-in"), h("dd", {}, ago(d.lastSeen)),
       h("dt", {}, "Blocked today"), h("dd", {}, d.status.blockedToday ?? "–"),
       h("dt", {}, "Lockdown"), h("dd", {}, d.status.deviceOwner ? "Device Owner" : "Not active"),
       h("dt", {}, "Unblock requests"), h("dd", {}, d.pendingRequests ? `${d.pendingRequests} waiting` : "None")),
   ));
-  fill($app(), head, banner, cards.length ? h("div", { class: "grid" }, cards)
-    : h("div", { class: "card empty" }, h("h2", {}, "No phones yet"), h("p", { class: "muted" }, "Add a phone to pair it with your account."), button("Add a phone", async () => addPhoneDialog())));
+  const grid = h("div", { class: "grid" }, cards);
+  const empty = h("div", { class: "card empty" }, h("h2", {}, "No phones yet"), h("p", { class: "muted" }, "Add a phone to pair it with your account."), button("Add a phone", async () => addPhoneDialog()));
+  search.addEventListener("input", () => {
+    const q = search.value.trim().toLowerCase();
+    data.devices.forEach((d, i) => { cards[i].style.display = (!q || d.name.toLowerCase().includes(q) || d.id.toLowerCase().includes(q)) ? "" : "none"; });
+  });
+  fill($app(), head, banner, data.devices.length ? h("div", {}, search, grid) : empty);
 }
 
 // ------------------------------------------------------------------ pairing
@@ -350,7 +357,8 @@ async function renderDevice(id, tab) {
   const head = h("div", { class: "spread" },
     h("div", {}, h("a", { href: "#/", class: "small" }, "← Phones"), h("h1", {}, d.name),
       h("div", { class: "row" }, deviceHealth(d), h("span", { class: "muted small" }, `Checked in ${ago(d.lastSeen)} · VEIL ${d.appVersion || "?"}`),
-        d.pendingConfig ? pill("warn", "Changes waiting for the phone") : null)),
+        d.pendingConfig ? pill("warn", "Changes waiting for the phone") : null),
+      h("div", { class: "muted small" }, "Client ID: ", h("code", {}, d.id))),
     button("Rename", async () => {
       const name = prompt("New name for this phone", d.name);
       if (name) { await api("PATCH", `/api/devices/${id}`, { name }); route(); }

@@ -174,6 +174,44 @@ describe("AI jobs", () => {
     assert.equal(msgs[1].proposal, null);
   });
 
+  it("classifies installed apps: approves safe, asks about unsure, blocks unsafe", async () => {
+    const { device } = await pairedDevice(); // defaults to allow-list mode
+    await model.syncDevice(device, { apps: [
+      { package: "com.android.chrome", label: "Chrome" },
+      { package: "com.waze", label: "Waze" },
+      { package: "com.some.unknown", label: "Mystery" },
+      { package: "com.adult.xxx", label: "XXX" },
+    ] });
+    const sel = (await model.syncDevice(device, { apps: [
+      { package: "com.android.chrome", label: "Chrome" },
+      { package: "com.waze", label: "Waze" },
+      { package: "com.some.unknown", label: "Mystery" },
+      { package: "com.adult.xxx", label: "XXX" },
+    ] })).classifyApps.map((a) => a.package);
+    assert.ok(sel.includes("com.waze") && sel.includes("com.adult.xxx"));
+    fakeClient([{ results: [
+      { package: "com.waze", decision: "allow", category: "navigation", reason: "maps" },
+      { package: "com.android.chrome", decision: "block", category: "browser", reason: "unfiltered web" },
+      { package: "com.some.unknown", decision: "ask", category: "unknown", reason: "not recognised" },
+      { package: "com.adult.xxx", decision: "block", category: "adult", reason: "adult content" },
+    ] }]);
+    const counts = await ai.classifyApps([
+      { package: "com.waze", label: "Waze" }, { package: "com.android.chrome", label: "Chrome" },
+      { package: "com.some.unknown", label: "Mystery" }, { package: "com.adult.xxx", label: "XXX" },
+    ]);
+    const res = await model.recordAppClassification(device.id, counts);
+    assert.deepEqual(res, { approved: 1, asked: 1, blocked: 2 });
+    const d = await model.getDeviceForTest(device.id);
+    assert.deepEqual(d!.config.apps.allowed, ["com.waze"]);
+    const reqs = await model.listRequests(device.id);
+    const ask = reqs.find((r) => r.kind === "app" && r.host === "com.some.unknown");
+    assert.ok(ask && ask.status === "pending" && ask.escalated);
+    // Already-classified apps are not offered again (use a freshly-loaded device, as the real sync does).
+    const fresh = (await model.getDeviceForTest(device.id))!;
+    const again = (await model.syncDevice(fresh, { apps: [{ package: "com.adult.xxx", label: "XXX" }] })).classifyApps;
+    assert.equal(again.length, 0);
+  });
+
   it("writes a summary from aggregated activity", async () => {
     const { device } = await pairedDevice();
     const now = Date.now();
