@@ -48,6 +48,12 @@ export interface DeviceConfig {
   customAllow: string[];
   tempAllow: TempAllow[];
   aiClassification: boolean;
+  /** Read the browser address bar to block pages by path/query (needs the screen filter on the phone). */
+  urlFilter: boolean;
+  /** Close browsers VEIL can't read the URL of (so they can't be used to bypass the filter). */
+  blockUnknownBrowsers: boolean;
+  /** URL substrings to block, path-level, e.g. "reddit.com/r/" or "/explore". */
+  blockedUrls: string[];
   /** "filter": everything except what's blocked. "allowlist": only allowed sites load (see webAllowlist on the phone). */
   webMode: (typeof WEB_MODES)[number];
   /** In allowlist mode, also allow sites the AI confidently classified as safe (education, government, app infrastructure...). */
@@ -117,6 +123,9 @@ export function defaultConfig(): DeviceConfig {
     customAllow: [],
     tempAllow: [],
     aiClassification: true,
+    urlFilter: true,
+    blockUnknownBrowsers: false,
+    blockedUrls: [],
     webMode: "filter",
     aiAutoAllowSafe: true,
     aiAutoApprove: "ai_decides",
@@ -203,6 +212,18 @@ function words(v: unknown, fallback: string[], minLen: number): string[] {
 }
 
 
+/** URL substrings for the browser URL filter: lowercase, no spaces, 2-200 chars. */
+function urlParts(v: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(v)) return fallback;
+  const out = new Set<string>();
+  for (const x of v) {
+    const w = String(x).trim().toLowerCase();
+    if (w.length >= 2 && w.length <= 200 && !/\s/.test(w)) out.add(w);
+    if (out.size >= MAX_LIST) break;
+  }
+  return [...out].sort();
+}
+
 function packages(v: unknown, fallback: string[], always: string[] = ["app.veil.android"], never: string[] = []): string[] {
   if (!Array.isArray(v)) return fallback;
   const out = new Set<string>(always);
@@ -254,6 +275,9 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
     customAllow: hosts(p.customAllow, b.customAllow),
     tempAllow: tempAllows(p.tempAllow, b.tempAllow, now),
     aiClassification: bool(p.aiClassification, b.aiClassification),
+    urlFilter: bool(p.urlFilter, b.urlFilter ?? true),
+    blockUnknownBrowsers: bool(p.blockUnknownBrowsers, b.blockUnknownBrowsers ?? false),
+    blockedUrls: urlParts(p.blockedUrls, b.blockedUrls ?? []),
     webMode: oneOf(p.webMode, WEB_MODES, b.webMode ?? "filter"),
     aiAutoAllowSafe: bool(p.aiAutoAllowSafe, b.aiAutoAllowSafe ?? true),
     aiAutoApprove: oneOf(p.aiAutoApprove, AUTO_APPROVE, b.aiAutoApprove ?? "off"),

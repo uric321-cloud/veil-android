@@ -13,7 +13,7 @@ KOTLIN_VERSION=2.1.21   # keep in step with the Kotlin plugin in build.gradle.kt
 OUT=$ROOT/.localcheck/testout
 J=$ROOT/app/src/main/java/app/veil/android
 
-TESTS=(Engine TextEngine InApp Image)
+TESTS=(Engine TextEngine InApp Image Url)
 [ "${1:-}" = "--live" ] && TESTS+=(Upstream)
 
 # Sources each test compiles against, besides the test file itself.
@@ -23,6 +23,7 @@ sources() {
         TextEngine) echo "$J/screen/TextRuleEngine.kt $J/screen/Tiers.kt" ;;
         InApp) echo "$J/screen/InAppMatch.kt" ;;
         Image) echo "$J/screen/ImageVerdict.kt" ;;
+        Url) echo "$J/screen/UrlVerdict.kt" ;;
         Upstream) echo "$J/dns/DnsMessage.kt $J/dns/Upstream.kt $J/VeilLog.kt" ;;
     esac
 }

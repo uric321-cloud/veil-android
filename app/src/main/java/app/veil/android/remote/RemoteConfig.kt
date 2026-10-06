@@ -39,6 +39,9 @@ object RemoteConfig {
             if (s.tempAllows != m) s.tempAllows = m
         }
         bool(c, "aiClassification") { if (s.aiClassification != it) s.aiClassification = it }
+        bool(c, "urlFilter") { if (s.urlFilter != it) s.urlFilter = it }
+        bool(c, "blockUnknownBrowsers") { if (s.blockUnknownBrowsers != it) s.blockUnknownBrowsers = it }
+        strings(c, "blockedUrls") { v -> val n = v.map { it.trim().lowercase() }.filter { it.length >= 2 }.toSet(); if (s.blockedUrls != n) s.blockedUrls = n }
         if (c.has("webMode")) { val on = c.optString("webMode") == "allowlist"; if (s.webAllowlistMode != on) s.webAllowlistMode = on }
         bool(c, "aiAutoAllowSafe") { if (s.aiAutoAllowSafe != it) s.aiAutoAllowSafe = it }
 

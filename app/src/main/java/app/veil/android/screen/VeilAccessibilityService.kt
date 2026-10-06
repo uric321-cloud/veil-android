@@ -15,6 +15,7 @@ import android.view.accessibility.AccessibilityEvent
 import app.veil.android.VeilLog
 import app.veil.android.apps.AppControl
 import app.veil.android.apps.BlockedAppActivity
+import app.veil.android.remote.EventQueue
 import app.veil.android.rules.RuleStore
 import app.veil.android.rules.TextRules
 
@@ -126,16 +127,57 @@ class VeilAccessibilityService : AccessibilityService() {
     }
 
     @Volatile private var lastLeaveAt = 0L
+    @Volatile private var lastUrlBlockedAt = 0L
+    @Volatile private var lastBlockedUrl = ""
+
+    /**
+     * Browser handling: close a browser whose address bar VEIL can't read (when
+     * the admin chose to), or block the current page by its URL. Returns true if
+     * it acted (so this frame isn't scanned further).
+     */
+    private fun checkBrowser(root: android.view.accessibility.AccessibilityNodeInfo, pkg: String): Boolean {
+        if (store.blockUnknownBrowsers && BrowserUrlReader.isKnownUnsupportedBrowser(pkg)) {
+            val now = System.currentTimeMillis()
+            if (now - lastBlockedAt > 800) {
+                lastBlockedAt = now
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                mainHandler.postDelayed({ BlockedAppActivity.show(this, pkg) }, 250)
+            }
+            return true
+        }
+        if (!store.urlFilter || !BrowserUrlReader.isSupportedBrowser(pkg)) return false
+        val url = BrowserUrlReader.readUrl(root, pkg) ?: return false
+        val keywords = if (store.keywordsEnabled) store.keywords else emptySet()
+        val reason = UrlVerdict.blocked(url, store.blockedUrls, keywords, store.customAllow) ?: return false
+        val now = System.currentTimeMillis()
+        if (url == lastBlockedUrl && now - lastUrlBlockedAt < 4000) return true // already acting on this one
+        lastUrlBlockedAt = now
+        lastBlockedUrl = url
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        val host = UrlVerdict.hostOf(url) ?: url
+        store.countBlock()
+        EventQueue.block(host, reason, "url")
+        mainHandler.post { android.widget.Toast.makeText(this, "This page is blocked", android.widget.Toast.LENGTH_SHORT).show() }
+        VeilLog.i("Blocked URL ($reason): $host")
+        return true
+    }
 
     private fun doScan() {
         if (!screenOn) { clearOverlay(); return }
         // Nothing to do for this app: don't even read the screen (saves battery).
         val cp = currentPackage
         val imagesWanted = store.screenProtectionWanted && store.imageFilter && images.supported
-        if (!(store.screenProtectionWanted && store.textEnabled) && !imagesWanted && (cp == null || InAppRules.forApp(this, cp).isEmpty())) { clearOverlay(); return }
+        val webWanted = store.screenProtectionWanted && (store.urlFilter || store.blockUnknownBrowsers)
+        val browserHere = cp != null && (BrowserUrlReader.isSupportedBrowser(cp) || BrowserUrlReader.isKnownUnsupportedBrowser(cp))
+        if (!(store.screenProtectionWanted && store.textEnabled) && !imagesWanted && !(webWanted && browserHere) &&
+            (cp == null || InAppRules.forApp(this, cp).isEmpty())) { clearOverlay(); return }
         val root = try { rootInActiveWindow } catch (_: Throwable) { null } ?: run { clearOverlay(); return }
         val pkg = root.packageName?.toString() ?: currentPackage
         val covers = ArrayList<Cover>()
+
+        // Browser URL filter: block a page by its path/query, or close an
+        // unreadable browser. Runs before text/image scanning for this frame.
+        if (pkg != null && pkg != packageName && webWanted && checkBrowser(root, pkg)) { publish(covers); return }
 
         // In-app blocking runs whether or not the word filter is on: it's the admin's rule.
         if (pkg != null && pkg != packageName) {

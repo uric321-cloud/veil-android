@@ -220,6 +220,21 @@ class RuleStore private constructor(context: Context) {
         get() = prefs.getBoolean(K_NOTIF_ON, true)
         set(v) = prefs.edit().putBoolean(K_NOTIF_ON, v).apply()
 
+    /** Read the browser address bar and block pages by URL path/query (needs the screen filter). */
+    var urlFilter: Boolean
+        get() = prefs.getBoolean(K_URL_ON, true)
+        set(v) = prefs.edit().putBoolean(K_URL_ON, v).apply()
+
+    /** Close browsers whose address bar VEIL can't read, since it can't filter inside them. */
+    var blockUnknownBrowsers: Boolean
+        get() = prefs.getBoolean(K_URL_BLOCK_UNKNOWN, false)
+        set(v) = prefs.edit().putBoolean(K_URL_BLOCK_UNKNOWN, v).apply()
+
+    /** Admin URL substrings to block (path-level), e.g. "reddit.com/r/" or "/explore". */
+    var blockedUrls: Set<String>
+        get() = prefs.getStringSet(K_URL_PARTS, emptySet()) ?: emptySet()
+        set(v) = prefs.edit().putStringSet(K_URL_PARTS, v.toSet()).apply()
+
     val imagesCoveredTotal: Long get() = prefs.getLong(K_IMAGE_TOTAL, 0)
     fun countImagesCovered(n: Int) {
         if (n <= 0) return
@@ -364,6 +379,9 @@ class RuleStore private constructor(context: Context) {
         const val K_TEXT_TOTAL = "text_covered_total"
         const val K_IMAGE_ON = "image_filter"
         const val K_NOTIF_ON = "notification_filter"
+        const val K_URL_ON = "url_filter"
+        const val K_URL_BLOCK_UNKNOWN = "url_block_unknown_browsers"
+        const val K_URL_PARTS = "url_blocked_parts"
         const val K_IMAGE_STRICT = "image_strictness"
         const val K_IMAGE_TOTAL = "images_covered_total"
 
