@@ -303,17 +303,17 @@ describe("silent devices", () => {
   it("alerts once when a paired phone stops checking in, and clears on the next check-in", async () => {
     const { pair } = await signupAndPair();
     // Just paired: lastSeen is now, so no alert.
-    assert.equal(await model.checkSilentDevices(), 0);
+    assert.equal((await model.checkSilentDevices()).length, 0);
     // 20 minutes later it has gone quiet.
     const future = Date.now() + 20 * 60_000;
-    assert.equal(await model.checkSilentDevices(future), 1);
-    assert.equal(await model.checkSilentDevices(future + 60_000), 0); // not repeated
+    assert.equal((await model.checkSilentDevices(future)).length, 1);
+    assert.equal((await model.checkSilentDevices(future + 60_000)).length, 0); // not repeated
     const d = await model.getDeviceForTest(pair.deviceId);
     assert.equal(d!.alerts[0].type, "device_silent");
     // A check-in clears the flag, so a later silence alerts again.
     await call("POST", "/api/device/sync", { token: pair.token, csrf: false, body: {} });
     assert.equal((await model.getDeviceForTest(pair.deviceId))!.silentAlerted, false);
-    assert.equal(await model.checkSilentDevices(Date.now() + 20 * 60_000), 1);
+    assert.equal((await model.checkSilentDevices(Date.now() + 20 * 60_000)).length, 1);
   });
 });
 

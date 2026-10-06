@@ -239,6 +239,10 @@ export async function logout(t: string | null): Promise<void> {
   if (t) await kv().del(K.session(sha256(t)));
 }
 
+export async function getAdmin(id: string): Promise<Admin | null> {
+  return kv().get<Admin>(K.admin(id));
+}
+
 export function publicAdmin(a: Admin) {
   return { id: a.id, email: a.email, name: a.name };
 }
@@ -754,10 +758,10 @@ export async function allActiveDevices(): Promise<Device[]> {
  * means it is no longer reporting. The alert is raised once (silentAlerted) and
  * cleared on the next check-in (syncDevice). Returns the number newly alerted.
  */
-export async function checkSilentDevices(now = Date.now()): Promise<number> {
+export async function checkSilentDevices(now = Date.now()): Promise<{ adminId: string; deviceId: string; name: string }[]> {
   const SILENT_AFTER = 15 * 60_000;   // not heard from in 15 min
   const GIVE_UP_AFTER = 7 * DAY;      // stop alerting about long-gone phones
-  let raised = 0;
+  const raised: { adminId: string; deviceId: string; name: string }[] = [];
   for (const d of await allActiveDevices()) {
     const gap = now - d.lastSeen;
     if (d.silentAlerted || gap < SILENT_AFTER || gap > GIVE_UP_AFTER) continue;
@@ -769,7 +773,7 @@ export async function checkSilentDevices(now = Date.now()): Promise<number> {
     d.alerts = d.alerts.slice(0, MAX_ALERTS);
     d.silentAlerted = true;
     await kv().set(K.device(d.id), d);
-    raised++;
+    raised.push({ adminId: d.adminId, deviceId: d.id, name: d.name });
   }
   return raised;
 }

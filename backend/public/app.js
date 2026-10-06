@@ -155,12 +155,42 @@ function renderWho() {
   const who = document.getElementById("who");
   fill(who, );
   if (!state.session) return;
-  add(who, h("span", {}, state.session.name), button("Sign out", async () => {
+  const on = ("Notification" in window) && Notification.permission === "granted";
+  const bell = button(on ? "🔔 Alerts on" : "🔔 Turn on alerts", async () => enablePush(), "ghost small");
+  add(who, h("span", {}, state.session.name), bell, button("Sign out", async () => {
     await api("POST", "/api/logout");
     state.session = null;
     location.hash = "#/";
     route();
   }, "ghost small"));
+}
+
+function urlBase64ToUint8Array(base64) {
+  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+/** Register the service worker and subscribe this device to admin alerts. */
+async function enablePush() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    toast("This browser can't show alerts. On iPhone, add this site to your Home screen first.");
+    return;
+  }
+  try {
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { toast("Allow notifications to get alerts."); return; }
+    const { publicKey } = await api("GET", "/api/push/key");
+    const sub = await reg.pushManager.getSubscription() ||
+      await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+    await api("POST", "/api/push/subscribe", { subscription: sub.toJSON() });
+    toast("Alerts are on for this device.");
+    renderWho();
+  } catch (e) {
+    toast("Couldn't turn on alerts: " + e.message);
+  }
 }
 
 // ------------------------------------------------------------------ sign in / sign up

@@ -1,6 +1,7 @@
 import type { Config, Context } from "@netlify/functions";
 import { aggregateEvents, aiConfigured } from "../lib/ai.ts";
 import { publicCatalog } from "../lib/inapp.ts";
+import { addSubscription, notificationsConfigured, removeSubscription, vapidPublicKey } from "../lib/notify.ts";
 import { HttpError, bearer, cookie, json, readJson, str } from "../lib/http.ts";
 import {
   adminCount, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest,
@@ -101,6 +102,24 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/api\/logout$/, async (req) => {
     await logout(cookie(req, SESSION_COOKIE));
     return json({ ok: true }, 200, { "set-cookie": sessionCookie("", 0) });
+  }],
+
+  // ---------------------------------------------------------------- admin: notifications
+  ["GET", /^\/api\/push\/key$/, async (req) => {
+    await requireAdmin(req);
+    return json({ publicKey: await vapidPublicKey(), email: notificationsConfigured().email });
+  }],
+  ["POST", /^\/api\/push\/subscribe$/, async (req) => {
+    const admin = await requireAdmin(req);
+    const body = await readJson<{ subscription?: unknown }>(req);
+    await addSubscription(admin.id, body.subscription as { endpoint: string; keys: { p256dh: string; auth: string } });
+    return json({ ok: true });
+  }],
+  ["POST", /^\/api\/push\/unsubscribe$/, async (req) => {
+    const admin = await requireAdmin(req);
+    const body = await readJson<{ endpoint?: string }>(req);
+    await removeSubscription(admin.id, str(body.endpoint, 500));
+    return json({ ok: true });
   }],
 
   // ---------------------------------------------------------------- admin: devices
