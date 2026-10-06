@@ -60,7 +60,7 @@ const routes: [string, RegExp, Handler][] = [
     const body = await readJson<{ code: string; deviceName?: string; appVersion?: string; status?: object }>(req);
     const { device, token, adminName } = await pairDevice(body);
     return json({
-      deviceId: device.id, token, adminName, recoveryHash: device.recoveryHash,
+      deviceId: device.id, token, adminName, deviceName: device.name, recoveryHash: device.recoveryHash,
       configVersion: device.configVersion, config: device.config, pollSeconds: 60,
     });
   }],

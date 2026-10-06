@@ -388,6 +388,7 @@ export interface SyncResult {
     catalogVersion: string;
     catalogRules?: PathRule[];
     adminName: string;
+    deviceName: string;
     pollSeconds: number;
   };
   reviewRequestIds: string[];
@@ -512,6 +513,7 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
       catalogVersion: catalog.version,
       catalogRules: input.catalogVersion === catalog.version ? undefined : catalog.rules,
       adminName: admin?.name ?? "your admin",
+      deviceName: device.name,
       pollSeconds: 60,
     },
     reviewRequestIds,

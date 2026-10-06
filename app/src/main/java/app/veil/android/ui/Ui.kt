@@ -26,6 +26,7 @@ object Ui {
     const val CARD = 0xFFFFFFFF.toInt()
     const val PRIMARY = 0xFF1F2A44.toInt()
     const val ACCENT = 0xFF2F6BFF.toInt()
+    const val ACCENT_DEEP = 0xFF1B2A7A.toInt()
     const val GOOD = 0xFF1E9E5A.toInt()
     const val BAD = 0xFFD14343.toInt()
     const val WARN = 0xFFB7791F.toInt()
@@ -33,6 +34,9 @@ object Ui {
     const val MUTED = 0xFF667085.toInt()
     const val LINE = 0xFFE4E7EC.toInt()
     const val CHIP = 0xFFEEF2FF.toInt()
+    const val ON_DARK = 0xFFFFFFFF.toInt()
+    const val ON_DARK_DIM = 0xCCFFFFFF.toInt()
+    const val GLASS = 0x26FFFFFF
 
     fun dp(c: Context, v: Float): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, c.resources.displayMetrics).toInt()
@@ -44,6 +48,49 @@ object Ui {
             setColor(color)
             if (strokeColor != null) setStroke(dp(c, 1f), strokeColor)
         }
+
+    /** A diagonal two-colour gradient, optionally with only the bottom corners rounded. */
+    fun gradient(c: Context, start: Int, end: Int, radiusDp: Float = 0f, bottomOnly: Boolean = false): GradientDrawable =
+        GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(start, end)).apply {
+            shape = GradientDrawable.RECTANGLE
+            if (radiusDp > 0f) {
+                val r = dp(c, radiusDp).toFloat()
+                if (bottomOnly) cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
+                else cornerRadius = r
+            }
+        }
+
+    /** A rounded status chip: a coloured dot and a label. `onDark` tints it for a dark hero. */
+    fun statusChip(c: Context, label: String, dotColor: Int, onDark: Boolean): LinearLayout {
+        val row = LinearLayout(c).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(if (onDark) GLASS else CHIP, 20f, c)
+            setPadding(dp(c, 11f), dp(c, 6f), dp(c, 13f), dp(c, 6f))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        val dot = View(c).apply {
+            background = rounded(dotColor, 5f, c)
+            layoutParams = LinearLayout.LayoutParams(dp(c, 9f), dp(c, 9f)).apply { rightMargin = dp(c, 8f) }
+        }
+        row.addView(dot)
+        row.addView(text(c, label, 13f, if (onDark) ON_DARK else TEXT, true).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        })
+        return row
+    }
+
+    /** A small square status badge (a ✓ or ✗ on a coloured tile) of a fixed size. */
+    fun badge(c: Context, ok: Boolean): TextView = TextView(c).apply {
+        text = if (ok) "✓" else "✗"
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        setTextColor(ON_DARK)
+        setTypeface(typeface, Typeface.BOLD)
+        gravity = Gravity.CENTER
+        background = rounded(if (ok) GOOD else BAD, 7f, c)
+        val s = dp(c, 22f)
+        layoutParams = LinearLayout.LayoutParams(s, s).apply { rightMargin = dp(c, 12f) }
+    }
 
     fun vertical(c: Context, paddingDp: Float = 0f): LinearLayout = LinearLayout(c).apply {
         orientation = LinearLayout.VERTICAL

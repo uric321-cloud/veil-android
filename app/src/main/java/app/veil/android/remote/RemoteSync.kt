@@ -123,6 +123,7 @@ object RemoteSync {
         r.token = res.getString("token")
         r.deviceId = res.optString("deviceId")
         r.adminName = res.optString("adminName")
+        res.optString("deviceName").takeIf { it.isNotEmpty() }?.let { r.deviceName = it }
         r.recoveryHash = res.optString("recoveryHash")
         r.pollSeconds = res.optInt("pollSeconds", 60)
         r.pendingPairCode = ""
@@ -183,6 +184,7 @@ object RemoteSync {
         r.lastSyncAt = System.currentTimeMillis()
         r.pollSeconds = res.optInt("pollSeconds", 60)
         res.optString("adminName").takeIf { it.isNotEmpty() }?.let { r.adminName = it }
+        res.optString("deviceName").takeIf { it.isNotEmpty() }?.let { r.deviceName = it }
         if (requests.any { !it.sent }) r.saveRequests(requests.map { it.sent = true; it })
 
         res.optJSONObject("config")?.let {
