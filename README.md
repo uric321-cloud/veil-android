@@ -63,6 +63,12 @@ number of phones.
   Device Owner. The 8-digit recovery code shown once at pairing does the same
   on the phone with no server needed (5 tries, then a 30-minute lock; the admin
   is alerted).
+- **Accountability partner.** Each phone can name a trusted partner email
+  (Overview → *Accountability partner*). They are emailed the phone's daily
+  check-in report and any protection alerts (protection turned off, VPN revoked,
+  ...), but can't see the dashboard or change settings. Needs `RESEND_API_KEY`;
+  the daily digest also needs the AI report (`ANTHROPIC_API_KEY`), while alerts
+  send with just Resend.
 - **AI (Claude).** With `ANTHROPIC_API_KEY` set on the Netlify site: a review
   and recommendation on every unblock request, classification of sites no list
   covers (confident adult/bypass results are added to a shared blocklist), daily
