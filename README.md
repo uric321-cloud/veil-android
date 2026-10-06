@@ -96,6 +96,14 @@ number of phones.
   banner - the one place on-screen covering can't catch in time. On by default for
   managed phones; the user grants notification access once (separate from
   accessibility). Toggle: *Screen filter → Block notifications with bad words*.
+- **Page (URL) filtering**: reads the browser address bar through the
+  accessibility service and blocks a page by its path or query - what DNS can't
+  see (a section of a site you otherwise allow, or a search term). Admin URL
+  substrings (`reddit.com/r/`, `/explore`) and the keyword list (matched as whole
+  words in the path/query, so it won't block `essex.gov.uk`) both apply; a blocked
+  page is sent back with a short notice. Known browsers are supported by their
+  address-bar id; the admin can optionally close browsers VEIL can't read so they
+  can't be used to bypass the filter. Toggles under *Web filter → Page (URL) filter*.
 - **Filter levels**: Open, Standard, Strict, Allowed sites only. In allowed-sites-
   only mode, sites the AI is confident are education, government, banking,
   health or app infrastructure open on their own.
