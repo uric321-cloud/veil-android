@@ -33,6 +33,11 @@ class RemoteStore private constructor(context: Context) {
         get() = prefs.getString("admin_name", "") ?: ""
         set(v) = prefs.edit().putString("admin_name", v).apply()
 
+    /** The friendly name the admin gave this phone on the dashboard (e.g. "Dad's phone"). */
+    var deviceName: String
+        get() = prefs.getString("device_name", "") ?: ""
+        set(v) = prefs.edit().putString("device_name", v).apply()
+
     /** sha256("veil-recovery:" + code); the code itself is only ever shown to the admin. */
     var recoveryHash: String
         get() = prefs.getString("recovery_hash", "") ?: ""

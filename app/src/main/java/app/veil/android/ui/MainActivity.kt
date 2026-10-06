@@ -2,6 +2,8 @@ package app.veil.android.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -46,7 +48,7 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var content: FrameLayout
     private lateinit var tabBar: LinearLayout
-    private lateinit var statusLine: TextView
+    private lateinit var hero: LinearLayout
     private val tabViews = HashMap<String, TextView>()
     private var currentTab = "home"
     private var unlockedUntil = 0L
@@ -102,13 +104,11 @@ class MainActivity : Activity() {
         root.setBackgroundColor(Ui.BG)
         root.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
 
-        val header = Ui.vertical(c).apply {
-            setPadding(Ui.dp(c, 20f), Ui.dp(c, 14f), Ui.dp(c, 20f), Ui.dp(c, 8f))
+        hero = Ui.vertical(c).apply {
+            background = Ui.gradient(c, Ui.ACCENT, Ui.ACCENT_DEEP, radiusDp = 22f, bottomOnly = true)
+            setPadding(Ui.dp(c, 20f), Ui.dp(c, 18f), Ui.dp(c, 20f), Ui.dp(c, 20f))
         }
-        header.addView(Ui.text(c, "VEIL", 24f, Ui.PRIMARY, true))
-        statusLine = Ui.caption(c, "")
-        header.addView(statusLine)
-        root.addView(header)
+        root.addView(hero)
 
         content = FrameLayout(c).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
@@ -150,13 +150,7 @@ class MainActivity : Activity() {
     private fun render() {
         val managed = remote.isPaired
         val running = VeilVpnService.isRunning
-        statusLine.text = when {
-            managed -> "Managed by ${adminName()}"
-            running -> "Protection is on · ${store.blockedToday} blocked today"
-            store.protectionWanted -> "Protection is off · tap Turn on"
-            else -> "Not protecting this phone yet"
-        }
-        statusLine.setTextColor(if (running) Ui.GOOD else Ui.MUTED)
+        buildHero(managed, running)
         // A managed phone shows one simple screen: no tabs, no list of blocked sites.
         tabBar.visibility = if (managed) View.GONE else View.VISIBLE
         for ((k, t) in tabViews) t.setTextColor(if (k == currentTab) Ui.ACCENT else Ui.MUTED)
@@ -181,20 +175,81 @@ class MainActivity : Activity() {
         if (y > 0) scroll.post { scroll.scrollTo(0, y) }
     }
 
+    // ------------------------------------------------------------------ hero
+
+    /** The gradient banner: wordmark, live status, device name, and the support ID. */
+    private fun buildHero(managed: Boolean, running: Boolean) {
+        val c = this
+        hero.removeAllViews()
+
+        val top = Ui.horizontal(c)
+        top.addView(Ui.text(c, "VEIL", 22f, Ui.ON_DARK, true).apply {
+            letterSpacing = 0.18f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        top.addView(Ui.statusChip(c, if (running) "Protection on" else "Protection off",
+            if (running) 0xFF46E08A.toInt() else 0xFFFF8A8A.toInt(), onDark = true))
+        hero.addView(top)
+        hero.addView(Ui.space(c, 14f))
+
+        hero.addView(Ui.text(c, deviceLabel(), 26f, Ui.ON_DARK, true))
+        val model = Build.MODEL ?: "Android phone"
+        hero.addView(Ui.text(c, if (managed) "Managed by ${adminName()} · $model" else model, 13f, Ui.ON_DARK_DIM).apply {
+            setPadding(0, Ui.dp(c, 3f), 0, 0)
+        })
+
+        if (managed && remote.deviceId.isNotEmpty()) {
+            hero.addView(Ui.space(c, 14f))
+            val idRow = LinearLayout(c).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = Ui.rounded(Ui.GLASS, 12f, c)
+                setPadding(Ui.dp(c, 13f), Ui.dp(c, 9f), Ui.dp(c, 8f), Ui.dp(c, 9f))
+                setOnClickListener { copyToClipboard(remote.deviceId); toast("Support ID copied") }
+            }
+            val idText = Ui.vertical(c).apply { layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+            idText.addView(Ui.text(c, "SUPPORT ID", 10f, Ui.ON_DARK_DIM, true).apply { letterSpacing = 0.14f })
+            idText.addView(Ui.text(c, remote.deviceId, 15f, Ui.ON_DARK, true).apply { setPadding(0, Ui.dp(c, 1f), 0, 0) })
+            idRow.addView(idText)
+            idRow.addView(Ui.text(c, "Copy", 13f, Ui.ON_DARK, true).apply {
+                background = Ui.rounded(Ui.GLASS, 9f, c)
+                setPadding(Ui.dp(c, 14f), Ui.dp(c, 7f), Ui.dp(c, 14f), Ui.dp(c, 7f))
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                setOnClickListener { copyToClipboard(remote.deviceId); toast("Support ID copied") }
+            })
+            hero.addView(idRow)
+            hero.addView(Ui.text(c, "Give this ID to support if you need help with this phone.", 11f, Ui.ON_DARK_DIM).apply {
+                setPadding(Ui.dp(c, 2f), Ui.dp(c, 7f), 0, 0)
+            })
+        }
+    }
+
+    private fun deviceLabel(): String =
+        remote.deviceName.ifBlank { Build.MODEL ?: "" }.ifBlank { "This phone" }
+
+    private fun copyToClipboard(value: String) {
+        val cb = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        cb.setPrimaryClip(ClipData.newPlainText("VEIL support ID", value))
+    }
+
     // ------------------------------------------------------------------ Home
 
     /** One line in the health card: a green/red status word, a label, and a Fix button when off. */
     private fun healthRow(card: LinearLayout, label: String, ok: Boolean, fixLabel: String, fix: (() -> Unit)?) {
         val c = this
         val row = Ui.horizontal(c)
-        row.addView(Ui.text(c, if (ok) "✓" else "✗", 18f, if (ok) Ui.GOOD else Ui.BAD, true)
-            .apply { (layoutParams as? LinearLayout.LayoutParams)?.rightMargin = Ui.dp(c, 10f) })
-        row.addView(Ui.text(c, label, 15f).apply {
+        row.setPadding(0, Ui.dp(c, 5f), 0, Ui.dp(c, 5f))
+        // A fixed-size badge (not a full-width TextView) so the label keeps its width.
+        row.addView(Ui.badge(c, ok))
+        row.addView(Ui.text(c, label, 14f).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         })
-        if (!ok && fix != null) row.addView(Ui.button(c, fixLabel, filled = false) { fix() })
+        if (!ok && fix != null) row.addView(Ui.button(c, fixLabel, filled = false) { fix() }.apply {
+            setPadding(Ui.dp(c, 14f), Ui.dp(c, 5f), Ui.dp(c, 14f), Ui.dp(c, 5f))
+            minHeight = Ui.dp(c, 36f); minimumHeight = Ui.dp(c, 36f)
+            (layoutParams as LinearLayout.LayoutParams).leftMargin = Ui.dp(c, 8f)
+        })
         card.addView(row)
-        card.addView(Ui.space(c, 6f))
     }
 
     /**
@@ -255,10 +310,10 @@ class MainActivity : Activity() {
         val running = VeilVpnService.isRunning
         val status = Ui.card(c)
         val row = Ui.horizontal(c)
-        row.addView(Ui.text(c, if (running) "Protected" else "Not protected", 26f, if (running) Ui.GOOD else Ui.BAD, true).apply {
+        row.addView(Ui.text(c, if (running) "You're protected" else "Protection is off", 18f, if (running) Ui.GOOD else Ui.BAD, true).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         })
-        row.addView(Ui.pill(c, if (remote.isPaired) "Managed" else "Self mode", Ui.PRIMARY))
+        row.addView(Ui.pill(c, if (remote.isPaired) "Managed" else "Self mode", Ui.ACCENT))
         status.addView(row)
         status.addView(Ui.caption(c, if (running)
             "Adult sites, your block list and encrypted-DNS bypasses are being filtered on every app on this phone."
@@ -561,7 +616,12 @@ class MainActivity : Activity() {
         val running = VeilVpnService.isRunning
 
         val status = Ui.card(c)
-        status.addView(Ui.text(c, if (running) "Protected" else "Protection is off", 24f, if (running) Ui.GOOD else Ui.BAD, true))
+        val srow = Ui.horizontal(c)
+        srow.addView(Ui.text(c, if (running) "You're protected" else "Protection is off", 18f, if (running) Ui.GOOD else Ui.BAD, true).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        if (DeviceOwner.isOwner(c)) srow.addView(Ui.pill(c, "Locked", Ui.ACCENT))
+        status.addView(srow)
         status.addView(Ui.caption(c, "This phone is looked after by ${adminName()}. If a website or app you need is blocked, ask for it below — most requests are answered within a minute."))
         if (!running) status.addView(Ui.wideButton(c, "Turn protection on", filled = true, color = Ui.GOOD) { startProtection() })
         col.addView(status)
