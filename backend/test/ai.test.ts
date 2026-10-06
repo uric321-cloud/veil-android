@@ -53,6 +53,18 @@ describe("AI jobs", () => {
     assert.equal((await model.getJob(job.id))!.status, "done");
   });
 
+  it("reviews an app request with the app prompt and never suggests a time limit", async () => {
+    const { device } = await pairedDevice();
+    await model.syncDevice(device, { requests: [{ localId: "a1", kind: "app", host: "com.android.chrome", label: "Chrome", reason: "need a browser" }] });
+    const [req] = await model.listRequests(device.id);
+    const calls = fakeClient([{ recommendation: "approve_limited", suggestedMinutes: 60, category: "Web browser", risk: "high", explanation: "Unfiltered browsing." }]);
+    await ai.runJob(await model.createJob("review", { deviceId: device.id, requestId: req.id }));
+    assert.match(calls[0].messages[0].content, /package com\.android\.chrome/);
+    const r = await model.getRequest(device.id, req.id);
+    assert.equal(r!.ai!.recommendation, "approve");
+    assert.equal(r!.ai!.suggestedMinutes, 0);
+  });
+
   it("auto-blocks only confident adult/bypass classifications and ignores domains it wasn't asked about", async () => {
     fakeClient([{ results: [
       { domain: "adult.example", category: "adult", confidence: 0.97, reason: "porn site" },

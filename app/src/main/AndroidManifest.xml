@@ -12,6 +12,18 @@
     <!-- Screen filter (Stage 1): overlay to cover flagged content -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- App control: see which launchable apps are installed (Android 11+ package visibility). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+    </queries>
+
     <application
         android:name=".VeilApp"
         android:allowBackup="false"
@@ -72,6 +84,14 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Local VPN that filters DNS lookups for content blocking" />
         </service>
+
+        <activity
+            android:name=".apps.BlockedAppActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize" />
 
         <!-- Device Owner (fully managed device) support. Provisioned from the admin
              dashboard's QR code or `adb shell dpm set-device-owner`. -->

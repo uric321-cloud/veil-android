@@ -76,13 +76,20 @@ class RemoteStore private constructor(context: Context) {
         get() = try { JSONObject(prefs.getString("last_status", "{}") ?: "{}") } catch (_: Throwable) { JSONObject() }
         set(v) = prefs.edit().putString("last_status", v.toString()).apply()
 
+    /** Hash of the app list last sent, so it's only uploaded when it changes. */
+    var appsHash: String
+        get() = prefs.getString("apps_hash", "") ?: ""
+        set(v) = prefs.edit().putString("apps_hash", v).apply()
+
     var lastTextCovered: Long
         get() = prefs.getLong("last_text_covered", -1)
         set(v) = prefs.edit().putLong("last_text_covered", v).apply()
 
     // ---- unblock requests raised on this phone ----
 
-    class Request(val localId: String, val host: String, val reason: String, val at: Long, var status: String, var until: Long, var sent: Boolean, var note: String)
+    /** kind "site" (host is a domain) or "app" (host is a package name, label its name). */
+    class Request(val localId: String, val host: String, val reason: String, val at: Long, var status: String, var until: Long, var sent: Boolean, var note: String,
+                  val kind: String = "site", val label: String = "")
 
     @Synchronized
     fun requests(): List<Request> {
@@ -90,7 +97,8 @@ class RemoteStore private constructor(context: Context) {
         return (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             Request(o.getString("localId"), o.getString("host"), o.optString("reason"), o.getLong("at"),
-                o.optString("status", "pending"), o.optLong("until", -1), o.optBoolean("sent"), o.optString("note"))
+                o.optString("status", "pending"), o.optLong("until", -1), o.optBoolean("sent"), o.optString("note"),
+                o.optString("kind", "site"), o.optString("label"))
         }
     }
 
@@ -99,7 +107,8 @@ class RemoteStore private constructor(context: Context) {
         val arr = JSONArray()
         for (r in list.sortedByDescending { it.at }.take(100)) {
             arr.put(JSONObject().put("localId", r.localId).put("host", r.host).put("reason", r.reason).put("at", r.at)
-                .put("status", r.status).put("until", r.until).put("sent", r.sent).put("note", r.note))
+                .put("status", r.status).put("until", r.until).put("sent", r.sent).put("note", r.note)
+                .put("kind", r.kind).put("label", r.label))
         }
         prefs.edit().putString("requests", arr.toString()).apply()
     }

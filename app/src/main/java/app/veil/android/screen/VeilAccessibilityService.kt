@@ -13,6 +13,8 @@ import android.os.Looper
 import android.os.PowerManager
 import android.view.accessibility.AccessibilityEvent
 import app.veil.android.VeilLog
+import app.veil.android.apps.AppControl
+import app.veil.android.apps.BlockedAppActivity
 import app.veil.android.rules.RuleStore
 import app.veil.android.rules.TextRules
 
@@ -81,11 +83,30 @@ class VeilAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            event.packageName?.let { currentPackage = it.toString() }
+            event.packageName?.let {
+                currentPackage = it.toString()
+                checkBlockedApp(it.toString())
+            }
         }
         // Debounce: collapse a burst of events into a single scan.
         bgHandler.removeCallbacks(scanRunnable)
         bgHandler.postDelayed(scanRunnable, DEBOUNCE_MS)
+    }
+
+    @Volatile private var lastBlockedAt = 0L
+
+    /**
+     * App control without Device Owner: a blocked app is sent back to the home
+     * screen as soon as it comes to the front. (With Device Owner it can't start at all.)
+     */
+    private fun checkBlockedApp(pkg: String) {
+        if (pkg == packageName || !AppControl.isBlocked(this, pkg)) return
+        val now = System.currentTimeMillis()
+        if (now - lastBlockedAt < 800) return
+        lastBlockedAt = now
+        performGlobalAction(GLOBAL_ACTION_HOME)
+        VeilLog.i("Blocked app closed: $pkg")
+        mainHandler.postDelayed({ BlockedAppActivity.show(this, pkg) }, 250)
     }
 
     private fun doScan() {

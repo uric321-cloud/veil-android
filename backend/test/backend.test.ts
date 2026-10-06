@@ -68,6 +68,16 @@ describe("config", () => {
     assert.ok(c.screen.safeListApps.includes("app.veil.android"));
   });
 
+  it("keeps an app off both lists, never blocks VEIL, and defaults old configs", () => {
+    const c = sanitizeConfig({ apps: { mode: "allowlist", allowed: ["com.waze", "bad pkg"], blocked: ["com.waze", "app.veil.android", "com.tiktok"] } });
+    assert.equal(c.apps.mode, "allowlist");
+    assert.deepEqual(c.apps.allowed, ["com.waze"]);
+    assert.deepEqual(c.apps.blocked, ["com.tiktok"]);
+    const legacy = defaultConfig() as any;
+    delete legacy.apps;
+    assert.equal(sanitizeConfig({ youtubeStrict: true }, legacy).apps.mode, "off");
+  });
+
   it("drops expired temporary allows", () => {
     const now = Date.now();
     const c = sanitizeConfig({ tempAllow: [{ host: "a.com", until: now - 1 }, { host: "b.com", until: now + 60_000 }] });
@@ -175,6 +185,25 @@ describe("pairing and sync", () => {
 
     const again = await body(await call("POST", "/api/device/sync", { token: pair.token, csrf: false, body: { appliedConfigVersion: 3 } }));
     assert.equal(again.config, undefined);
+  });
+
+  it("stores the app inventory and turns an approved app request into an allowed app", async () => {
+    const { cookie, pair } = await signupAndPair();
+    await call("PATCH", `/api/devices/${pair.deviceId}/config`, { cookie, body: { apps: { mode: "blocklist", blocked: ["com.zhiliaoapp.musically"] } } });
+    await call("POST", "/api/device/sync", { token: pair.token, csrf: false, body: {
+      apps: [{ package: "com.zhiliaoapp.musically", label: "TikTok", blocked: true }, { package: "com.waze", label: "Waze" }, { package: "not valid" }],
+      requests: [{ localId: "a1", kind: "app", host: "com.zhiliaoapp.musically", label: "TikTok", reason: "school project" }],
+    } });
+    const d = await body(await call("GET", `/api/devices/${pair.deviceId}`, { cookie }));
+    assert.deepEqual(d.device.apps.map((a: any) => a.label), ["TikTok", "Waze"]);
+    const req = d.requests[0];
+    assert.equal(req.kind, "app");
+    assert.equal(req.label, "TikTok");
+    await call("POST", `/api/devices/${pair.deviceId}/requests/${req.id}`, { cookie, body: { approve: true, minutes: 30 } });
+    const after = await body(await call("GET", `/api/devices/${pair.deviceId}`, { cookie }));
+    assert.deepEqual(after.device.config.apps.allowed, ["com.zhiliaoapp.musically"]);
+    assert.deepEqual(after.device.config.apps.blocked, []);
+    assert.equal(after.requests[0].until, 0);
   });
 
   it("approving permanently adds the site to the allow list", async () => {

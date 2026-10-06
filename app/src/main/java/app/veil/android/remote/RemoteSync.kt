@@ -12,6 +12,7 @@ import app.veil.android.R
 import app.veil.android.VeilApp
 import app.veil.android.VeilLog
 import app.veil.android.admin.DeviceOwner
+import app.veil.android.apps.AppControl
 import app.veil.android.rules.ListSource
 import app.veil.android.rules.RuleStore
 import app.veil.android.screen.VeilAccessibilityService
@@ -135,6 +136,9 @@ object RemoteSync {
         val r = RemoteStore.get(ctx)
         val store = RuleStore.get(ctx)
         store.pruneTempAllows()
+        AppControl.apply(ctx) // catches apps installed since the last check-in
+        val inventory = AppControl.inventory(ctx)
+        val inventoryHash = RemoteStore.sha256(inventory.toString())
 
         val st = status(ctx)
         noteTransitions(r, st)
@@ -150,7 +154,10 @@ object RemoteSync {
             .put("status", st)
             .put("events", JSONArray(events))
             .put("unknownDomains", JSONArray(unknown))
-            .put("requests", JSONArray(requests.filter { !it.sent }.map { JSONObject().put("localId", it.localId).put("host", it.host).put("reason", it.reason).put("at", it.at) }))
+            .put("requests", JSONArray(requests.filter { !it.sent }.map {
+                JSONObject().put("localId", it.localId).put("kind", it.kind).put("host", it.host).put("label", it.label).put("reason", it.reason).put("at", it.at)
+            }))
+        if (inventoryHash != r.appsHash) body.put("apps", inventory)
         val res = try {
             RemoteClient(r.server, r.token).post("/api/device/sync", body)
         } catch (t: Throwable) {
@@ -161,6 +168,7 @@ object RemoteSync {
             throw t
         }
         r.lastStatus = st
+        r.appsHash = inventoryHash
         r.lastSyncAt = System.currentTimeMillis()
         r.pollSeconds = res.optInt("pollSeconds", 60)
         res.optString("adminName").takeIf { it.isNotEmpty() }?.let { r.adminName = it }
@@ -265,8 +273,19 @@ object RemoteSync {
         val r = RemoteStore.get(context)
         if (!r.isPaired) return false
         val list = r.requests().toMutableList()
-        if (list.any { it.host == h && it.status == "pending" }) return true
-        list.add(RemoteStore.Request(UUID.randomUUID().toString(), h, reason.trim().take(500), System.currentTimeMillis(), "pending", -1, false, ""))
+        if (list.any { it.kind == "site" && it.host == h && it.status == "pending" }) return true
+        list.add(RemoteStore.Request(UUID.randomUUID().toString(), h, reason.trim().take(500), System.currentTimeMillis(), "pending", -1, false, "", "site"))
+        r.saveRequests(list)
+        syncNow(context)
+        return true
+    }
+
+    fun requestApp(context: Context, pkg: String, label: String, reason: String): Boolean {
+        val r = RemoteStore.get(context)
+        if (!r.isPaired) return false
+        val list = r.requests().toMutableList()
+        if (list.any { it.kind == "app" && it.host == pkg && it.status == "pending" }) return true
+        list.add(RemoteStore.Request(UUID.randomUUID().toString(), pkg, reason.trim().take(500), System.currentTimeMillis(), "pending", -1, false, "", "app", label.take(80)))
         r.saveRequests(list)
         syncNow(context)
         return true
@@ -286,10 +305,12 @@ object RemoteSync {
             req.until = if (o.has("until")) o.optLong("until", -1) else -1
             req.note = o.optString("note")
             changed = true
+            val name = if (req.kind == "app") req.label.ifEmpty { req.host } else req.host
             val text = when {
+                req.kind == "app" && status == "approved" -> "$name is allowed. It may take a minute to open."
                 status == "approved" && req.until == 0L -> "${req.host} is now always allowed."
                 status == "approved" -> "${req.host} is allowed for ${minutesLeft(req.until)}."
-                else -> "${req.host} stays blocked." + if (req.note.isNotEmpty()) " ${r.adminName}: ${req.note}" else ""
+                else -> "$name stays blocked." + if (req.note.isNotEmpty()) " ${r.adminName}: ${req.note}" else ""
             }
             notify(ctx, 40 + (req.localId.hashCode() and 0xff), if (status == "approved") "Request approved" else "Request declined", text)
         }
@@ -304,6 +325,7 @@ object RemoteSync {
     // ------------------------------------------------------------------ release + recovery
 
     private fun releaseLocally(ctx: Context, message: String) {
+        AppControl.releaseAll(ctx)
         DeviceOwner.release(ctx)
         RemoteStore.get(ctx).clear()
         EventQueue.refresh(ctx)

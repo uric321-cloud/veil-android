@@ -1,4 +1,4 @@
-import { defaultConfig, normalizeHost, sanitizeConfig, type DeviceConfig } from "./config.ts";
+import { defaultConfig, normalizeHost, PACKAGE_RE, sanitizeConfig, type DeviceConfig } from "./config.ts";
 import { randomInt } from "node:crypto";
 import { hashPassword, id, normalizePairingCode, pairingCode, sha256, token, verifyPassword } from "./crypto.ts";
 import { HttpError, str } from "./http.ts";
@@ -57,6 +57,15 @@ export interface Device {
   commands: Command[];
   alerts: Alert[];
   state: "active" | "releasing" | "released";
+  /** Launchable apps on the phone, for the admin's Apps tab. Sent only when it changes. */
+  apps?: InstalledApp[];
+}
+
+export interface InstalledApp {
+  package: string;
+  label: string;
+  system: boolean;
+  blocked: boolean;
 }
 
 export interface DeviceEvent {
@@ -81,6 +90,9 @@ export interface UnblockRequest {
   id: string;
   deviceId: string;
   localId: string;
+  /** "site" (default; host is a domain) or "app" (host is the package name). */
+  kind?: "site" | "app";
+  label?: string;
   host: string;
   reason: string;
   createdAt: number;
@@ -309,8 +321,9 @@ export interface SyncInput {
   appliedConfigVersion?: number;
   status?: DeviceStatus;
   events?: DeviceEvent[];
-  requests?: { localId: string; host: string; reason?: string; at?: number }[];
+  requests?: { localId: string; kind?: string; host: string; label?: string; reason?: string; at?: number }[];
   unknownDomains?: string[];
+  apps?: { package: string; label?: string; system?: boolean; blocked?: boolean }[];
   commandAcks?: string[];
 }
 
@@ -362,16 +375,24 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
   device.alerts = device.alerts.slice(0, MAX_ALERTS);
   await appendEvents(device.id, events);
 
+  if (Array.isArray(input.apps)) {
+    device.apps = input.apps.slice(0, 1000)
+      .filter((x) => x && PACKAGE_RE.test(str(x.package, 200)))
+      .map((x) => ({ package: str(x.package, 200), label: str(x.label, 80) || str(x.package, 200), system: x.system === true, blocked: x.blocked === true }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
   // Unblock requests raised on the phone
   const reviewRequestIds: string[] = [];
   for (const r of (Array.isArray(input.requests) ? input.requests : []).slice(0, 20)) {
-    const host = normalizeHost(r?.host ?? "");
+    const kind = r?.kind === "app" ? "app" : "site";
+    const host = kind === "app" ? (PACKAGE_RE.test(str(r?.host, 200)) ? str(r?.host, 200) : null) : normalizeHost(r?.host ?? "");
     const localId = str(r?.localId, 60);
     if (!host || !localId) continue;
     const rid = `req_${sha256(`${device.id}:${localId}`).slice(0, 16)}`;
     if (await kv().get(K.request(device.id, rid))) continue; // retry of one we already have
     const req: UnblockRequest = {
-      id: rid, deviceId: device.id, localId, host,
+      id: rid, deviceId: device.id, localId, host, kind, label: kind === "app" ? str(r.label, 80) || host : undefined,
       reason: str(r.reason, 500), createdAt: Number(r.at) || now, status: "pending",
     };
     await kv().set(K.request(device.id, rid), req);
@@ -545,7 +566,12 @@ export async function decideRequest(device: Device, requestId: string, approve: 
   r.status = approve ? "approved" : "denied";
   r.decidedAt = now;
   r.note = str(note, 300) || undefined;
-  if (approve) {
+  if (approve && r.kind === "app") {
+    // Apps are allowed permanently; the admin can block them again from the Apps tab.
+    r.until = 0;
+    const apps = device.config.apps ?? defaultConfig().apps;
+    await updateConfig(device, { apps: { allowed: [...apps.allowed, r.host], blocked: apps.blocked.filter((p) => p !== r.host) } });
+  } else if (approve) {
     const m = Math.max(0, Math.min(60 * 24 * 30, Math.floor(Number(minutes) || 0)));
     if (m === 0) {
       r.until = 0;

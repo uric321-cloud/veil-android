@@ -55,6 +55,7 @@ object RemoteConfig {
         }
 
         c.optJSONObject("lockdown")?.let { DeviceOwner.applyPolicy(context, DeviceOwner.Policy.from(it)) }
+        c.optJSONObject("apps")?.let { app.veil.android.apps.AppControl.setPolicy(context, app.veil.android.apps.AppControl.Policy.from(it)) }
     }
 
     private inline fun bool(o: JSONObject, key: String, set: (Boolean) -> Unit) {

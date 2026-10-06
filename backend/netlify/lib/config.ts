@@ -53,6 +53,21 @@ export interface DeviceConfig {
     safeListApps: string[];
   };
   lockdown: LockdownPolicy;
+  apps: AppPolicy;
+}
+
+export const APP_MODES = ["off", "blocklist", "allowlist"] as const;
+
+/**
+ * Which apps may open. "blocklist": everything except `blocked`; "allowlist":
+ * only `allowed` (plus the phone's essentials, which the phone never blocks).
+ * approveNewApps: apps installed after pairing stay blocked until allowed.
+ */
+export interface AppPolicy {
+  mode: (typeof APP_MODES)[number];
+  allowed: string[];
+  blocked: string[];
+  approveNewApps: boolean;
 }
 
 export const DEFAULT_KEYWORDS = [
@@ -105,6 +120,7 @@ export function defaultConfig(): DeviceConfig {
       disallowUnknownSources: false,
       disallowDebugging: false,
     },
+    apps: { mode: "off", allowed: [], blocked: [], approveNewApps: false },
   };
 }
 
@@ -153,12 +169,14 @@ function words(v: unknown, fallback: string[], minLen: number): string[] {
   return [...out].sort();
 }
 
-function packages(v: unknown, fallback: string[]): string[] {
+export const PACKAGE_RE = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$/;
+
+function packages(v: unknown, fallback: string[], always: string[] = ["app.veil.android"], never: string[] = []): string[] {
   if (!Array.isArray(v)) return fallback;
-  const out = new Set<string>(["app.veil.android"]);
+  const out = new Set<string>(always);
   for (const x of v) {
     const p = String(x).trim();
-    if (/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$/.test(p)) out.add(p);
+    if (PACKAGE_RE.test(p) && !never.includes(p)) out.add(p);
     if (out.size >= MAX_LIST) break;
   }
   return [...out].sort();
@@ -186,7 +204,10 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
   const p = (patch && typeof patch === "object" ? patch : {}) as Record<string, any>;
   const s = (p.screen && typeof p.screen === "object" ? p.screen : {}) as Record<string, any>;
   const l = (p.lockdown && typeof p.lockdown === "object" ? p.lockdown : {}) as Record<string, any>;
+  const a = (p.apps && typeof p.apps === "object" ? p.apps : {}) as Record<string, any>;
   const b = base;
+  // Devices paired before app control existed have no apps policy stored yet.
+  const ba = b.apps ?? defaultConfig().apps;
   return {
     adultList: bool(p.adultList, b.adultList),
     keywordsEnabled: bool(p.keywordsEnabled, b.keywordsEnabled),
@@ -225,5 +246,11 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
       disallowUnknownSources: bool(l.disallowUnknownSources, b.lockdown.disallowUnknownSources),
       disallowDebugging: bool(l.disallowDebugging, b.lockdown.disallowDebugging),
     },
+    apps: (() => {
+      const allowed = packages(a.allowed, ba.allowed, []);
+      // VEIL itself can never be blocked; an app can't be on both lists (allowed wins).
+      const blocked = packages(a.blocked, ba.blocked, [], ["app.veil.android"]).filter((x) => !allowed.includes(x));
+      return { mode: oneOf(a.mode, APP_MODES, ba.mode), allowed, blocked, approveNewApps: bool(a.approveNewApps, ba.approveNewApps) };
+    })(),
   };
 }

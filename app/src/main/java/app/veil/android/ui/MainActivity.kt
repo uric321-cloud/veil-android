@@ -356,6 +356,7 @@ class MainActivity : Activity() {
         if (entries.isNotEmpty() && !remote.isPaired) head.addView(Ui.wideButton(c, "Clear list", filled = false, color = Ui.MUTED) { withPin { BlockLog.clear(); render() } })
         col.addView(head)
         if (remote.isPaired) buildRequests(col)
+        buildBlockedApps(col)
         val fmt = SimpleDateFormat("EEE HH:mm", Locale.getDefault())
         val list = Ui.card(c)
         for (e in entries.take(150)) {
@@ -504,6 +505,7 @@ class MainActivity : Activity() {
             "• Sites VEIL blocked, and how many words it covered on screen\n" +
             "• Alerts when protection, the screen filter or Private DNS is changed\n" +
             "• Your unblock requests and reasons\n" +
+            "• The names of apps installed on this phone, so ${adminName()} can choose which may open\n" +
             (if (store.aiClassification) "• Names of sites no block list covers, for AI classification (not stored against this phone)\n" else "") +
             "\nNot your messages, photos, passwords or the content of pages, and nothing from other apps. ${adminName()} controls only VEIL."))
         card.addView(Ui.space(c, 6f))
@@ -564,6 +566,27 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun buildBlockedApps(col: LinearLayout) {
+        val c = this
+        val blocked = app.veil.android.apps.AppControl.blockedNow(c)
+        if (blocked.isEmpty()) return
+        val card = Ui.card(c)
+        card.addView(Ui.heading(c, "Blocked apps (${blocked.size})"))
+        card.addView(Ui.caption(c, if (remote.isPaired) "These apps can't be opened. Tap “Ask” to ask ${adminName()} for one." else "These apps can't be opened on this phone."))
+        val pending = remote.requests().filter { it.kind == "app" && it.status == "pending" }.map { it.host }.toSet()
+        for (pkg in blocked.sortedBy { app.veil.android.apps.AppControl.label(c, it).lowercase() }) {
+            val label = app.veil.android.apps.AppControl.label(c, pkg)
+            when {
+                pkg in pending -> card.addView(Ui.chipRow(c, label, "Waiting for ${adminName()}", "", Ui.MUTED) {})
+                remote.isPaired -> card.addView(Ui.chipRow(c, label, null, "Ask", Ui.ACCENT) {
+                    app.veil.android.apps.BlockedAppActivity.show(c, pkg)
+                })
+                else -> card.addView(Ui.chipRow(c, label, null, "", Ui.MUTED) {})
+            }
+        }
+        col.addView(card)
+    }
+
     private fun buildRequests(col: LinearLayout) {
         val c = this
         val reqs = remote.requests().take(20)
@@ -580,7 +603,8 @@ class MainActivity : Activity() {
                 r.status == "approved" -> "Allowance ended"
                 else -> "Declined" + if (r.note.isNotEmpty()) ": ${r.note}" else ""
             }
-            card.addView(Ui.chipRow(c, r.host, "$state · ${fmt.format(Date(r.at))}", "", Ui.MUTED) {})
+            val title = if (r.kind == "app") "${r.label.ifEmpty { r.host }} (app)" else r.host
+            card.addView(Ui.chipRow(c, title, "$state · ${fmt.format(Date(r.at))}", "", Ui.MUTED) {})
         }
         col.addView(card)
     }

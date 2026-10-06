@@ -72,6 +72,23 @@ const REVIEW_SCHEMA = {
   },
 };
 
+export async function reviewAppRequest(device: Device, pkg: string, label: string, reason: string): Promise<AiReview> {
+  const user = [
+    `The phone's user asked the admin to allow the app "${label}" (Android package ${pkg}).`,
+    `Their reason: ${reason || "(none given)"}`,
+    `Screen-filter age tier on this phone: ${device.config.screen.tier}`,
+    `Apps the admin already allows: ${(device.config.apps?.allowed ?? []).slice(0, 60).join(", ") || "(none listed)"}`,
+    "",
+    "Say what this app is and recommend approve or deny (approve_limited is not available for apps; use approve or deny). " +
+      "Consider: does it contain or link to explicit content, open social feeds or short videos, unfiltered web browsing, " +
+      "chat with strangers, or ways around the filter (VPNs, proxies, other browsers, alternative app stores)? " +
+      "Utilities, banking, navigation, school and work apps are usually fine. If you don't recognise the package, say so " +
+      "and lean to deny with low confidence in the explanation.",
+  ].join("\n");
+  const r = await ask<AiReview>(PRODUCT, user, REVIEW_SCHEMA, "medium");
+  return { ...r, recommendation: r.recommendation === "approve_limited" ? "approve" : r.recommendation, suggestedMinutes: 0 };
+}
+
 export async function reviewRequest(device: Device, host: string, reason: string, history: DeviceEvent[]): Promise<AiReview> {
   const blocksForHost = history.filter((e) => e.type === "block" && e.host && (e.host === host || e.host.endsWith(`.${host}`)));
   const known = await getClassification(host);
@@ -282,7 +299,9 @@ export async function runJob(job: Job): Promise<void> {
         const r = await getRequest(deviceId, requestId);
         const device = await kv().get<Device>(`devices/${deviceId}`);
         if (!r || !device) throw new Error("Request or device missing");
-        r.ai = await reviewRequest(device, r.host, r.reason, await listEvents(deviceId, 7));
+        r.ai = r.kind === "app"
+          ? await reviewAppRequest(device, r.host, r.label ?? r.host, r.reason)
+          : await reviewRequest(device, r.host, r.reason, await listEvents(deviceId, 7));
         await saveRequest(r);
         await finishJob(job, r.ai);
         break;

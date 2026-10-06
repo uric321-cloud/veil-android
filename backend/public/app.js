@@ -311,7 +311,7 @@ function showPairing(body, res) {
 
 const TABS = [
   ["overview", "Overview"], ["requests", "Requests"], ["activity", "Activity"], ["filtering", "Web filter"],
-  ["screen", "Screen filter"], ["lockdown", "Lockdown"], ["assistant", "Assistant"],
+  ["screen", "Screen filter"], ["apps", "Apps"], ["lockdown", "Lockdown"], ["assistant", "Assistant"],
 ];
 
 async function loadDevice(id) {
@@ -355,7 +355,7 @@ async function renderDevice(id, tab) {
     button("I've saved it", async () => { state.recoveryCode = null; route(); }, "small")) : null;
 
   fill($app(), head, recovery, tabs, content);
-  const views = { overview: viewOverview, requests: viewRequests, activity: viewActivity, filtering: viewFiltering, screen: viewScreen, lockdown: viewLockdown, assistant: viewAssistant };
+  const views = { overview: viewOverview, requests: viewRequests, activity: viewActivity, filtering: viewFiltering, screen: viewScreen, apps: viewApps, lockdown: viewLockdown, assistant: viewAssistant };
   await (views[tab] || viewOverview)(content, data);
   if (tab === "overview" || tab === "requests") {
     state.timer = setInterval(() => { if (!document.querySelector("dialog[open]")) renderDevice(id, tab); }, 30000);
@@ -448,19 +448,71 @@ function viewRequests(root, data) {
     route();
   };
   const pendingList = pending.length ? h("ul", { class: "list" }, pending.map((r) => h("li", { class: "stack" },
-    h("div", { class: "spread" }, h("span", { class: "host" }, r.host), h("span", { class: "muted small" }, when(r.createdAt))),
+    h("div", { class: "spread" }, requestTitle(r), h("span", { class: "muted small" }, when(r.createdAt))),
     h("div", {}, h("span", { class: "muted" }, "Reason: "), r.reason || h("em", { class: "muted" }, "none given")),
     aiBox(r),
-    h("div", { class: "row" },
-      button("Allow 30 min", decide(r, true, 30), "secondary small"),
-      button("Allow 1 day", decide(r, true, 1440), "secondary small"),
-      button("Always allow", decide(r, true, 0), "secondary small"),
-      button("Deny", decide(r, false, 0), "danger small"))))) : h("p", { class: "muted" }, "Nothing waiting. When VEIL blocks something, the phone's user can ask you to allow it.");
+    r.kind === "app"
+      ? h("div", { class: "row" },
+        button("Allow app", decide(r, true, 0), "secondary small"),
+        button("Deny", decide(r, false, 0), "danger small"))
+      : h("div", { class: "row" },
+        button("Allow 30 min", decide(r, true, 30), "secondary small"),
+        button("Allow 1 day", decide(r, true, 1440), "secondary small"),
+        button("Always allow", decide(r, true, 0), "secondary small"),
+        button("Deny", decide(r, false, 0), "danger small"))))) : h("p", { class: "muted" }, "Nothing waiting. When VEIL blocks something, the phone's user can ask you to allow it.");
   add(root, 
     h("section", { class: "card" }, h("h2", {}, "Waiting for you"), pendingList),
     h("section", { class: "card" }, h("h2", {}, "Earlier"), done.length ? h("ul", { class: "list" }, done.map((r) => h("li", { class: "spread" },
-      h("div", {}, h("span", { class: "host" }, r.host), h("div", { class: "muted small" }, r.reason || "")),
+      h("div", {}, requestTitle(r), h("div", { class: "muted small" }, r.reason || "")),
       h("div", {}, r.status === "approved" ? pill("good", r.until === 0 ? "Always allowed" : r.until > Date.now() ? `Allowed until ${new Date(r.until).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : "Allowance ended") : pill("neutral", "Denied"))))) : h("p", { class: "muted" }, "No earlier requests.")));
+}
+
+function requestTitle(r) {
+  return r.kind === "app"
+    ? h("span", {}, h("strong", {}, r.label || r.host), " ", h("span", { class: "muted small" }, `app · ${r.host}`))
+    : h("span", { class: "host" }, r.host);
+}
+
+// ---------------- apps
+
+function viewApps(root, data) {
+  const d = data.device;
+  const policy = d.config.apps || { mode: "off", allowed: [], blocked: [], approveNewApps: false };
+  const apps = d.apps || [];
+  const modeSel = h("select", { id: "appmode" }, [["off", "Off: every app can open"], ["blocklist", "Block chosen apps"], ["allowlist", "Only allowed apps"]]
+    .map(([v, l]) => h("option", { value: v, selected: v === policy.mode }, l)));
+  modeSel.addEventListener("change", async () => {
+    try { await patchConfig({ apps: { mode: modeSel.value } }); route(); } catch (e) { toast(e.message); }
+  });
+  const isAllowed = (pkg) => policy.mode === "allowlist" ? policy.allowed.includes(pkg) : !policy.blocked.includes(pkg);
+  const setAllowed = async (pkg, allowed) => {
+    const allowedList = policy.allowed.filter((p) => p !== pkg);
+    const blockedList = policy.blocked.filter((p) => p !== pkg);
+    if (allowed) allowedList.push(pkg); else blockedList.push(pkg);
+    await patchConfig({ apps: { allowed: allowedList, blocked: blockedList } });
+    policy.allowed = allowedList;
+    policy.blocked = blockedList;
+  };
+  const filter = h("input", { type: "text", placeholder: "Search apps", "aria-label": "Search apps" });
+  const list = h("div");
+  const draw = () => {
+    const q = filter.value.trim().toLowerCase();
+    const shown = apps.filter((a) => !q || a.label.toLowerCase().includes(q) || a.package.toLowerCase().includes(q));
+    fill(list, shown.length ? shown.map((a) => switchRow(a.label, `${a.package}${a.system ? " · system app" : ""}${a.blocked ? " · blocked on the phone now" : ""}`, isAllowed(a.package), (v) => setAllowed(a.package, v)))
+      : h("p", { class: "muted" }, apps.length ? "No apps match." : "The phone hasn't sent its app list yet. It does on its next check-in."));
+  };
+  filter.addEventListener("input", draw);
+  draw();
+  add(root,
+    d.status.deviceOwner ? null : h("div", { class: "banner warn" }, h("strong", {}, "Without Device Owner, "),
+      "blocked apps are closed by VEIL's screen filter as soon as they open. That needs the accessibility service on, and it's easier to get around than Device Owner, which pauses blocked apps completely."),
+    h("section", { class: "card stack" }, h("h2", {}, "App control"),
+      h("div", {}, h("label", { for: "appmode" }, "Mode"), modeSel),
+      h("p", { class: "muted small" }, "The phone, messages, contacts, keyboard, home screen, Settings and VEIL itself are never blocked, so the phone always stays usable."),
+      switchRow("New apps need approval", "Apps installed after this is turned on stay blocked until you allow them. The phone's user can ask for them.", policy.approveNewApps, (v) => patchConfig({ apps: { approveNewApps: v } }))),
+    h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", {}, `Apps on the phone (${apps.length})`), h("div", { style: "min-width:200px;flex:1;max-width:320px" }, filter)),
+      policy.mode === "off" ? h("p", { class: "muted small" }, "App control is off. Choose a mode above; these switches then say which apps may open.") : null,
+      list));
 }
 
 // ---------------- activity

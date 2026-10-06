@@ -18,6 +18,40 @@ class VeilApp : Application() {
         // Re-assert Device Owner lockdown (no-op otherwise) and resume admin check-ins.
         app.veil.android.admin.DeviceOwner.applyBaseline(this)
         app.veil.android.remote.RemoteSync.start(this)
+        watchPackages()
+    }
+
+    /**
+     * New installs are checked straight away (not at the next check-in), so an
+     * app that needs approval is blocked before it's first opened. Package
+     * broadcasts can't be declared in the manifest, so this lives while the
+     * process does (the filter's foreground service keeps it alive).
+     */
+    private fun watchPackages() {
+        val filter = android.content.IntentFilter().apply {
+            addAction(android.content.Intent.ACTION_PACKAGE_ADDED)
+            addAction(android.content.Intent.ACTION_PACKAGE_REMOVED)
+            addAction(android.content.Intent.ACTION_PACKAGE_CHANGED)
+            addDataScheme("package")
+        }
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: android.content.Intent) {
+                Thread {
+                    try {
+                        app.veil.android.apps.AppControl.apply(context)
+                        if (app.veil.android.remote.RemoteStore.get(context).isPaired) app.veil.android.remote.RemoteSync.syncNow(context)
+                    } catch (t: Throwable) {
+                        VeilLog.w("Package change handling failed: ${t.message}")
+                    }
+                }.start()
+            }
+        }
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+            else registerReceiver(receiver, filter)
+        } catch (t: Throwable) {
+            VeilLog.w("Could not watch package changes: ${t.message}")
+        }
     }
 
     /** Writes any uncaught exception to a file so the next launch can offer to share it. */
