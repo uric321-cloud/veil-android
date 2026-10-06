@@ -147,18 +147,34 @@ class VeilAccessibilityService : AccessibilityService() {
         }
         if (!store.urlFilter || !BrowserUrlReader.isSupportedBrowser(pkg)) return false
         val url = BrowserUrlReader.readUrl(root, pkg) ?: return false
-        val keywords = if (store.keywordsEnabled) store.keywords else emptySet()
-        val reason = UrlVerdict.blocked(url, store.blockedUrls, keywords, store.customAllow) ?: return false
+        val host = UrlVerdict.hostOf(url) ?: url
+
+        // Proactive catalog first: it knows mixed sites by section before the page
+        // loads. An explicit "allow" section is let through (and skips keyword
+        // over-blocking); a "block" section is blocked anticipatorily.
+        val catalog = SiteCatalog.verdict(this, url)
+        if (catalog != null && catalog.first) return blockPage(url, host, "catalog: ${catalog.second}")
+        val explicitlyAllowed = catalog != null && !catalog.first
+
+        if (!explicitlyAllowed) {
+            val keywords = if (store.keywordsEnabled) store.keywords else emptySet()
+            val reason = UrlVerdict.blocked(url, store.blockedUrls, keywords, store.customAllow)
+            if (reason != null) return blockPage(url, host, reason)
+        }
+        return false // allowed section, or nothing to block: let image/text scanning run
+    }
+
+    /** Sends the browser back and records a content-free "url" block. Returns true (acted). */
+    private fun blockPage(url: String, host: String, reason: String): Boolean {
         val now = System.currentTimeMillis()
         if (url == lastBlockedUrl && now - lastUrlBlockedAt < 4000) return true // already acting on this one
         lastUrlBlockedAt = now
         lastBlockedUrl = url
         performGlobalAction(GLOBAL_ACTION_BACK)
-        val host = UrlVerdict.hostOf(url) ?: url
         store.countBlock()
         EventQueue.block(host, reason, "url")
         mainHandler.post { android.widget.Toast.makeText(this, "This page is blocked", android.widget.Toast.LENGTH_SHORT).show() }
-        VeilLog.i("Blocked URL ($reason): $host")
+        VeilLog.i("Blocked page ($reason)")
         return true
     }
 

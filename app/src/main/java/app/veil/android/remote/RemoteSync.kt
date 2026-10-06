@@ -168,6 +168,7 @@ object RemoteSync {
             }))
         if (inventoryHash != r.appsHash) body.put("apps", inventory)
         body.put("inAppHash", app.veil.android.screen.InAppRules.hash(ctx))
+        body.put("catalogVersion", store.catalogVersion)
         val res = try {
             RemoteClient(r.server, r.token).post("/api/device/sync", body)
         } catch (t: Throwable) {
@@ -192,6 +193,7 @@ object RemoteSync {
         }
         applyRequestDecisions(ctx, res.optJSONArray("requests"))
         res.optJSONArray("inAppRules")?.let { app.veil.android.screen.InAppRules.save(ctx, it, res.optString("inAppHash")) }
+        res.optJSONArray("catalogRules")?.let { app.veil.android.screen.SiteCatalog.save(ctx, it, res.optString("catalogVersion")) }
 
         val aiVersion = res.optInt("aiBlocklistVersion", 0)
         if (aiVersion > 0 && aiVersion != store.aiBlocklistVersion) fetchAiBlocklist(ctx, aiVersion)

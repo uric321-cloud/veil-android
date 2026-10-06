@@ -129,6 +129,15 @@ their own account. They can't invite further co-admins or touch your account.
   it's used that much today it's blocked like any other blocked app, until midnight.
   Uses Android usage stats, so the phone's user grants VEIL "usage access" once
   (surfaced in the health check and setup prompts). Enforced on each check-in.
+- **Proactive site catalog**: a shared, content-free catalog of *mixed* mainstream
+  sites - fine overall, but with risky sections - so the phone decides a section
+  **before the page loads** rather than reacting. The canonical case: on
+  victoriassecret.com, `/loungewear` is allowed but `/lingerie` and `/swim` are
+  blocked. Curated in `backend/netlify/lib/catalog.ts`, delivered to phones on
+  check-in (versioned like the in-app rules), and consulted by the on-device URL
+  filter (`CatalogVerdict`) ahead of admin/keyword rules. It is about sites, never
+  people, and ships no user data. The image filter still runs on allowed sections,
+  so an allowed page with a risqué photo is still covered.
 - **Filter levels**: Open, Standard, Strict, Allowed sites only. In allowed-sites-
   only mode, sites the AI is confident are education, government, banking,
   health or app infrastructure open on their own.
