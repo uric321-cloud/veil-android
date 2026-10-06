@@ -13,6 +13,10 @@ export interface Admin {
   name: string;
   passHash: string;
   createdAt: number;
+  /** Emails this admin invited as co-admins of their own phones (for display). */
+  coAdmins?: string[];
+  /** Owner admin ids whose phones this admin may also manage (granted by those owners). */
+  managesFor?: string[];
 }
 
 export interface DeviceStatus {
@@ -534,19 +538,61 @@ export async function listEvents(deviceId: string, days: number): Promise<Device
 // ------------------------------------------------------------------ admin views
 
 export async function listDevices(adminId: string): Promise<Device[]> {
-  const ids = (await kv().get<string[]>(K.adminDevices(adminId))) ?? [];
+  const admin = await kv().get<Admin>(K.admin(adminId));
+  const owners = [adminId, ...(admin?.managesFor ?? [])];
   const out: Device[] = [];
-  for (const i of ids) {
-    const d = await kv().get<Device>(K.device(i));
-    if (d && d.state !== "released") out.push(d);
+  const seen = new Set<string>();
+  for (const owner of owners) {
+    const ids = (await kv().get<string[]>(K.adminDevices(owner))) ?? [];
+    for (const i of ids) {
+      if (seen.has(i)) continue;
+      seen.add(i);
+      const d = await kv().get<Device>(K.device(i));
+      if (d && d.state !== "released") out.push(d);
+    }
   }
   return out;
 }
 
 export async function ownedDevice(adminId: string, deviceId: string): Promise<Device> {
   const d = await kv().get<Device>(K.device(deviceId));
-  if (!d || d.adminId !== adminId || d.state === "released") throw new HttpError(404, "Device not found");
-  return d;
+  if (!d || d.state === "released") throw new HttpError(404, "Device not found");
+  if (d.adminId === adminId) return d;
+  // A co-admin may manage the phones of an owner who granted them access.
+  const admin = await kv().get<Admin>(K.admin(adminId));
+  if (admin && (admin.managesFor ?? []).includes(d.adminId)) return d;
+  throw new HttpError(404, "Device not found");
+}
+
+/** The primary admin grants another existing admin (by email) co-management of their phones. */
+export async function addCoAdmin(owner: Admin, email: string): Promise<string[]> {
+  const e = str(email, 200).toLowerCase();
+  if (!e) throw new HttpError(400, "Enter an email address");
+  if (e === owner.email) throw new HttpError(400, "That's your own account");
+  const targetId = await kv().get<string>(K.adminEmail(e));
+  if (!targetId) throw new HttpError(404, "No admin has that email yet. Ask them to create an account first, then add them.");
+  const target = await kv().get<Admin>(K.admin(targetId));
+  if (!target) throw new HttpError(404, "That admin account could not be found");
+  target.managesFor = [...new Set([...(target.managesFor ?? []), owner.id])];
+  await kv().set(K.admin(target.id), target);
+  owner.coAdmins = [...new Set([...(owner.coAdmins ?? []), e])];
+  await kv().set(K.admin(owner.id), owner);
+  return owner.coAdmins;
+}
+
+export async function removeCoAdmin(owner: Admin, email: string): Promise<string[]> {
+  const e = str(email, 200).toLowerCase();
+  const targetId = await kv().get<string>(K.adminEmail(e));
+  if (targetId) {
+    const target = await kv().get<Admin>(K.admin(targetId));
+    if (target) {
+      target.managesFor = (target.managesFor ?? []).filter((x) => x !== owner.id);
+      await kv().set(K.admin(target.id), target);
+    }
+  }
+  owner.coAdmins = (owner.coAdmins ?? []).filter((x) => x !== e);
+  await kv().set(K.admin(owner.id), owner);
+  return owner.coAdmins;
 }
 
 /** Fetch a device by id with no owner check. For tests and internal jobs only. */

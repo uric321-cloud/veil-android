@@ -22,7 +22,9 @@ described below.
 
 `backend/` is the admin side: a Netlify site (Functions + Blobs) that serves the
 dashboard and the API phones check in with. One admin account manages any
-number of phones.
+number of phones, and can add **co-admins** (Phones page → *Team*): another
+existing admin, added by email, who can see and manage all your phones from
+their own account. They can't invite further co-admins or touch your account.
 
 - **Install and pair (no erase).** VEIL installs like any app and is paired
   afterwards — no factory reset. The admin clicks *Add a phone* for a single-use

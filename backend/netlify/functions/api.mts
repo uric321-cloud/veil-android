@@ -4,7 +4,7 @@ import { publicCatalog } from "../lib/inapp.ts";
 import { addSubscription, emailPartner, notificationsConfigured, notifyAdmin, removeSubscription, vapidPublicKey } from "../lib/notify.ts";
 import { HttpError, bearer, cookie, json, readJson, str } from "../lib/http.ts";
 import {
-  adminCount, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest,
+  addCoAdmin, adminCount, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest, removeCoAdmin,
   getAiBlocklist, getChat, getJob, getSummary, internalSecret, listDevices, listEvents, listRequests, login, logout,
   ownedDevice, pairDevice, publicAdmin, publicDevice, queueCommand, renameDevice, sessionAdmin, setPartnerEmail, syncDevice,
   takeRecoveryCode, updateConfig, type Admin, type Job,
@@ -119,6 +119,22 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/api\/logout$/, async (req) => {
     await logout(cookie(req, SESSION_COOKIE));
     return json({ ok: true }, 200, { "set-cookie": sessionCookie("", 0) });
+  }],
+
+  // ---------------------------------------------------------------- admin: co-admins (team)
+  ["GET", /^\/api\/coadmins$/, async (req) => {
+    const admin = await requireAdmin(req);
+    return json({ coAdmins: admin.coAdmins ?? [] });
+  }],
+  ["POST", /^\/api\/coadmins$/, async (req) => {
+    const admin = await requireAdmin(req);
+    const body = await readJson<{ email?: string }>(req);
+    return json({ coAdmins: await addCoAdmin(admin, str(body.email, 200)) });
+  }],
+  ["DELETE", /^\/api\/coadmins$/, async (req) => {
+    const admin = await requireAdmin(req);
+    const body = await readJson<{ email?: string }>(req);
+    return json({ coAdmins: await removeCoAdmin(admin, str(body.email, 200)) });
   }],
 
   // ---------------------------------------------------------------- admin: notifications
