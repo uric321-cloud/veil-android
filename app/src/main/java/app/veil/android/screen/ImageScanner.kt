@@ -25,6 +25,10 @@ import java.util.concurrent.Executor
  * Verdicts are kept per on-screen rectangle until the screen scrolls or the
  * window changes, because the next screenshot shows VEIL's own cover there.
  */
+/** An on-screen image area. [dynamic] marks a video surface, whose content keeps
+ *  changing, so its verdict is re-checked on a timer rather than cached forever. */
+data class ImgRegion(val rect: Rect, val dynamic: Boolean)
+
 class ImageScanner(private val service: AccessibilityService, private val executor: Executor) {
 
     private var interpreter: Interpreter? = null
@@ -32,7 +36,11 @@ class ImageScanner(private val service: AccessibilityService, private val execut
     @Volatile private var busy = false
     @Volatile private var lastRunAt = 0L
     private val verdicts = HashMap<String, Boolean>()
+    private val verdictAt = HashMap<String, Long>()
     @Volatile var covers: List<Rect> = emptyList()
+        private set
+    /** True when a video surface is on screen, so the service keeps re-sampling. */
+    @Volatile var videoPresent = false
         private set
 
     val supported: Boolean get() = Build.VERSION.SDK_INT >= 30
@@ -41,6 +49,7 @@ class ImageScanner(private val service: AccessibilityService, private val execut
     @Synchronized
     fun reset() {
         verdicts.clear()
+        verdictAt.clear()
         covers = emptyList()
     }
 
@@ -53,16 +62,25 @@ class ImageScanner(private val service: AccessibilityService, private val execut
      * cleared it as safe, so an image is never shown before it has been checked.
      * Otherwise a region is covered only after the model flags it.
      */
-    fun scan(regions: List<Rect>, strictness: String, failClosed: Boolean, onDone: (covers: List<Rect>, newlyCovered: Int) -> Unit) {
+    fun scan(regions: List<ImgRegion>, strictness: String, failClosed: Boolean, onDone: (covers: List<Rect>, newlyCovered: Int) -> Unit) {
         if (!supported || regions.isEmpty()) return
+        videoPresent = regions.any { it.dynamic }
+        val rects = regions.map { it.rect }
         // Refresh covers from what we already know. Fail-closed, this immediately
         // covers any region not yet cleared - including ones that just appeared.
-        val pre = synchronized(this) { recomputeCovers(regions, failClosed) }
+        val pre = synchronized(this) { recomputeCovers(rects, failClosed) }
         onDone(pre, 0)
         if (busy) return
         val now = System.currentTimeMillis()
         if (now - lastRunAt < MIN_INTERVAL_MS) return
-        val fresh = synchronized(this) { regions.filter { key(it) !in verdicts } }
+        // A region is fresh if never classified, or (for video surfaces) its last
+        // verdict is older than the re-sample interval - so moving video is rechecked.
+        val fresh = synchronized(this) {
+            regions.filter { r ->
+                val k = key(r.rect)
+                k !in verdicts || (r.dynamic && now - (verdictAt[k] ?: 0L) >= VIDEO_TTL_MS)
+            }.map { it.rect }
+        }
         if (fresh.isEmpty()) return
         busy = true
         lastRunAt = now
@@ -76,7 +94,7 @@ class ImageScanner(private val service: AccessibilityService, private val execut
                         if (shot != null) {
                             val newly = classify(shot, fresh, strictness)
                             shot.recycle()
-                            val all = synchronized(this@ImageScanner) { recomputeCovers(regions, failClosed) }
+                            val all = synchronized(this@ImageScanner) { recomputeCovers(rects, failClosed) }
                             onDone(all, newly)
                         }
                     } catch (t: Throwable) {
@@ -119,7 +137,7 @@ class ImageScanner(private val service: AccessibilityService, private val execut
         for (r in regions) {
             val crop = Rect(r)
             if (!crop.intersect(bounds) || crop.width() < MIN_SIDE_PX || crop.height() < MIN_SIDE_PX) {
-                synchronized(this) { verdicts[key(r)] = false }
+                synchronized(this) { verdicts[key(r)] = false; verdictAt[key(r)] = System.currentTimeMillis() }
                 continue
             }
             val scaled = Bitmap.createScaledBitmap(Bitmap.createBitmap(shot, crop.left, crop.top, crop.width(), crop.height()), SIZE, SIZE, true)
@@ -136,7 +154,7 @@ class ImageScanner(private val service: AccessibilityService, private val execut
             model.run(input, output)
             val cover = ImageVerdict.shouldCover(output[0], strictness)
             if (cover) newly++
-            synchronized(this) { verdicts[key(r)] = cover }
+            synchronized(this) { verdicts[key(r)] = cover; verdictAt[key(r)] = System.currentTimeMillis() }
         }
         return newly
     }
@@ -168,6 +186,8 @@ class ImageScanner(private val service: AccessibilityService, private val execut
         private const val MIN_SIDE_PX = 64
         private const val MIN_INTERVAL_MS = 900L
         private const val MAX_REGIONS = 12
+        /** How often a video surface's frame is re-checked while it plays. */
+        private const val VIDEO_TTL_MS = 1100L
         const val MODEL_ASSET = "models/nsfw_mobilenet_v2.tflite"
 
         private fun key(r: Rect) = "${r.left},${r.top},${r.right},${r.bottom}"
@@ -185,8 +205,8 @@ class ImageScanner(private val service: AccessibilityService, private val execut
          * pages) and large text-free leaf views such as video thumbnails,
          * biggest first.
          */
-        fun regions(root: AccessibilityNodeInfo, minSidePx: Int, maxRegions: Int = MAX_REGIONS): List<Rect> {
-            val out = ArrayList<Rect>()
+        fun regions(root: AccessibilityNodeInfo, minSidePx: Int, maxRegions: Int = MAX_REGIONS): List<ImgRegion> {
+            val out = ArrayList<ImgRegion>()
             val stack = ArrayDeque<AccessibilityNodeInfo>()
             stack.addLast(root)
             var visited = 0
@@ -197,15 +217,17 @@ class ImageScanner(private val service: AccessibilityService, private val execut
                     val cls = n.className?.toString() ?: ""
                     val leaf = n.childCount == 0
                     val textless = n.text.isNullOrEmpty()
-                    if (n.isVisibleToUser && (cls.contains("Image") || (leaf && textless && cls.contains("View")))) {
+                    // A playing video draws into a SurfaceView/TextureView/VideoView.
+                    val video = cls.contains("SurfaceView") || cls.contains("TextureView") || cls.contains("VideoView")
+                    if (n.isVisibleToUser && (video || cls.contains("Image") || (leaf && textless && cls.contains("View")))) {
                         val b = Rect()
                         n.getBoundsInScreen(b)
-                        if (b.width() >= minSidePx && b.height() >= minSidePx) out.add(b)
+                        if (b.width() >= minSidePx && b.height() >= minSidePx) out.add(ImgRegion(b, video))
                     }
                     for (i in 0 until n.childCount) n.getChild(i)?.let { stack.addLast(it) }
                 } catch (_: Throwable) {}
             }
-            return out.distinctBy { key(it) }.sortedByDescending { it.width().toLong() * it.height() }.take(maxRegions)
+            return out.distinctBy { key(it.rect) }.sortedByDescending { it.rect.width().toLong() * it.rect.height() }.take(maxRegions)
         }
     }
 }

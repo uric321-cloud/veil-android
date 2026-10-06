@@ -247,6 +247,12 @@ class VeilAccessibilityService : AccessibilityService() {
             if (newly > 0) store.countImagesCovered(newly)
             applyCovers(baseCovers + imageRects.map { Cover(it, TextAction.BAR) })
         }
+        // A playing video keeps changing without firing accessibility events, so
+        // keep re-sampling its frames on a timer while one is on screen.
+        if (regions.any { it.dynamic }) {
+            bgHandler.removeCallbacks(scanRunnable)
+            bgHandler.postDelayed(scanRunnable, VIDEO_RESAMPLE_MS)
+        }
     }
 
     /** Approximate the flagged word's rectangle inside a single-line node; fall back to the whole node. */
@@ -304,5 +310,7 @@ class VeilAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val DEBOUNCE_MS = 150L
+        /** Re-scan cadence for a playing video when no accessibility events arrive. */
+        private const val VIDEO_RESAMPLE_MS = 1100L
     }
 }

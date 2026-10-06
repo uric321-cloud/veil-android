@@ -127,6 +127,12 @@ number of phones.
   promise a literal zero miss rate.
   Rebuild notes: the model was rebuilt in Keras from the nsfwjs weights and
   exported to TFLite; outputs match the original within 0.007.
+  **Video:** a playing video draws into a SurfaceView/TextureView, whose frames
+  keep changing without firing accessibility events. VEIL marks those regions
+  "dynamic" and re-samples them about once a second while the video plays
+  (`VIDEO_TTL_MS`/`VIDEO_RESAMPLE_MS`), so an explicit frame is covered live, not
+  just the first thumbnail. DRM/secure video surfaces can't be captured and are
+  left alone.
 
 ### Running the backend
 
