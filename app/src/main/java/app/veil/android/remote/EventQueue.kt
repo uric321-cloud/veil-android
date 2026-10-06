@@ -48,18 +48,41 @@ object EventQueue {
         if (!enabled) synchronized(this) { events.clear(); pendingBlocks.clear(); unknown.clear() }
     }
 
+    /**
+     * A block, reported to the admin as a content-free category count. The host,
+     * the keyword and the URL path are NEVER sent or stored - only which generic
+     * category was blocked and how many times - so the server (and a breach of it)
+     * can never learn what site, image or message a person saw. Merged per
+     * category, not per host, for the same reason.
+     */
     @Synchronized
     fun block(host: String, reason: String, rule: String) {
         if (!enabled) return
         val now = System.currentTimeMillis()
-        val e = pendingBlocks[host]
+        val category = categoryOf(reason, rule)
+        val e = pendingBlocks[category]
         if (e != null) {
             e.put("count", e.optInt("count", 1) + 1).put("lastAt", now)
         } else {
-            if (pendingBlocks.size >= 500) flushBlocksLocked()
-            pendingBlocks[host] = JSONObject().put("type", "block").put("at", now).put("host", host).put("reason", reason).put("rule", rule).put("count", 1)
+            if (pendingBlocks.size >= 64) flushBlocksLocked()
+            pendingBlocks[category] = JSONObject().put("type", "block").put("at", now).put("category", category).put("count", 1)
         }
         markDirty(now)
+    }
+
+    /** Maps an internal block reason/rule to a fixed, content-free category code. */
+    private fun categoryOf(reason: String, rule: String): String {
+        val r = reason.lowercase()
+        return when {
+            r.contains("bypass") -> "bypass"
+            rule == "url" || r.startsWith("url rule") || r.contains("in page") -> "url"
+            r.contains("keyword") -> "keyword"
+            r.contains("block list") -> "blocklist"
+            r.contains("adult") -> "adult"
+            r.contains("ai-classified") || r.contains("ai classified") -> "ai"
+            r.contains("allowed list") -> "allowlist"
+            else -> "other"
+        }
     }
 
     @Synchronized

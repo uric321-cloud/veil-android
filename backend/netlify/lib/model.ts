@@ -81,14 +81,19 @@ export interface InstalledApp {
   blocked: boolean;
 }
 
+/** Fixed, content-free block categories. Never a host, keyword or URL path. */
+export const BLOCK_CATEGORIES = ["adult", "bypass", "blocklist", "keyword", "url", "ai", "allowlist", "app", "other"] as const;
+
 export interface DeviceEvent {
   type: "block" | "tamper" | "text" | "image" | "info";
   at: number;
-  host?: string;
-  reason?: string;
+  /** For block events: which generic category was blocked. No host/keyword/URL is ever stored. */
+  category?: string;
   rule?: string;
   count?: number;
   detail?: string;
+  /** Legacy field on old stored events only; never written for new events. */
+  host?: string;
 }
 
 export interface AiReview {
@@ -503,15 +508,23 @@ function cleanEvent(e: unknown): DeviceEvent | null {
   const type = o.type;
   if (type !== "block" && type !== "tamper" && type !== "text" && type !== "image" && type !== "info") return null;
   const at = Number(o.at);
-  return {
-    type,
-    at: Number.isFinite(at) && at > 0 ? at : Date.now(),
-    host: str(o.host, 253) || undefined,
-    reason: str(o.reason, 120) || undefined,
-    rule: str(o.rule, 120) || undefined,
-    count: Number.isFinite(Number(o.count)) ? Math.max(1, Math.min(100_000, Number(o.count))) : undefined,
-    detail: str(o.detail, 300) || undefined,
-  };
+  const count = Number.isFinite(Number(o.count)) ? Math.max(1, Math.min(100_000, Number(o.count))) : undefined;
+  const base = { type, at: Number.isFinite(at) && at > 0 ? at : Date.now() } as DeviceEvent;
+  // Content-free by construction: for a block we keep only a known category code
+  // (never a host, keyword or URL). Any host a phone sends is ignored and dropped.
+  if (type === "block") {
+    const category = str(o.category, 20).toLowerCase();
+    base.category = (BLOCK_CATEGORIES as readonly string[]).includes(category) ? category : "other";
+    base.count = count;
+  } else if (type === "tamper") {
+    base.rule = str(o.rule, 120) || undefined;
+    base.detail = str(o.detail, 300) || undefined;
+  } else if (type === "text" || type === "image") {
+    base.count = count;
+  } else {
+    base.detail = str(o.detail, 300) || undefined;
+  }
+  return base;
 }
 
 async function appendEvents(deviceId: string, events: DeviceEvent[]): Promise<void> {

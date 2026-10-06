@@ -44,15 +44,24 @@ their own account. They can't invite further co-admins or touch your account.
   **Protection status** health check on the home screen lists every guard with a
   one-tap fix, so setup problems (above all the accessibility permission) are
   obvious.
-- **Check-ins.** About once a minute the phone sends its status, what VEIL
-  blocked, tamper alerts and unblock requests, and receives settings changes,
+- **Check-ins.** About once a minute the phone sends its status, content-free
+  block counts, tamper alerts and unblock requests, and receives settings changes,
   request decisions, commands and the shared AI blocklist. A paired phone's
   settings are read-only; *Activity → Ask* sends an unblock request instead.
+- **Content-free by design (zero-knowledge).** A block is reported only as a
+  generic **category** ("adult", "blocked keyword", "blocked page", ...) plus a
+  **count** - never the site, keyword, URL, image or message. The server ignores
+  and drops any host a phone sends, so a breach of it reveals category counts per
+  random device token, never what a person saw. Judging happens on the phone and
+  the content is discarded. The admin sees categories and counts, never content.
+  (The one path that transmits a domain is *AI site classification*, which is
+  off unless the admin turns it on and is disclosed on the phone; it is used
+  transiently and never stored against the phone. Moving it fully on-device is on
+  the roadmap, along with the encrypted escape hatch and Stripe billing.)
 - **What the admin can see** (also listed on the phone under *Settings*): VEIL's
-  settings and status, sites VEIL blocked, words covered on screen (counts),
-  tamper alerts, unblock requests, and - if *AI site classification* is on -
-  the names of sites no list covers, which are classified but not stored
-  against the phone. Never messages, photos, page content or other apps' data.
+  settings and status, block counts by category, words/images covered (counts),
+  tamper alerts and unblock requests. Never the site, keyword, URL, message,
+  photo, page content or other apps' data.
 - **Device Owner lockdown.** Set up from the QR code on the first Welcome screen
   of a factory-reset phone (tap six times), or with
   `adb shell dpm set-device-owner app.veil.android/.admin.VeilDeviceAdmin`.

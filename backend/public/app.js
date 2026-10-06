@@ -728,18 +728,14 @@ async function viewActivity(root, data) {
     const local = st.blocksByUtcHour.map((_, i) => st.blocksByUtcHour[((i - offset) % 24 + 24) % 24]);
     fill(body, 
       h("div", { class: "grid" },
-        h("section", { class: "card" }, h("h2", {}, "Blocks"),
+        h("section", { class: "card" }, h("h2", {}, "Blocks by category"),
           h("p", { class: "code" }, st.totalBlocks),
-          h("ul", { class: "list" }, Object.entries(st.blocksByReason).sort((a, b) => b[1] - a[1]).map(([reason, n]) => h("li", { class: "spread" }, h("span", {}, reason), h("strong", {}, n))))),
+          (st.topCategories && st.topCategories.length) ? h("ul", { class: "list" }, st.topCategories.map((x) => h("li", { class: "spread" }, h("span", {}, x.label), h("strong", {}, x.count)))) : h("p", { class: "muted" }, "Nothing blocked in this period.")),
         h("section", { class: "card" }, h("h2", {}, "By hour of day"),
           h("div", { class: "bars", role: "img", "aria-label": "Blocked lookups by hour of day" }, local.map((n) => h("div", { style: `height:${Math.round((n / max) * 100)}%`, title: String(n) }))),
           h("div", { class: "bars-axis" }, h("span", {}, "0:00"), h("span", {}, "6:00"), h("span", {}, "12:00"), h("span", {}, "18:00"), h("span", {}, "23:00")),
           h("p", { class: "muted small" }, `Words covered on screen: ${st.textCovered} · Images covered: ${st.imagesCovered ?? 0}`))),
-      h("section", { class: "card" }, h("h2", {}, "Most blocked sites"),
-        st.topBlockedHosts.length ? h("ul", { class: "list" }, st.topBlockedHosts.map((x) => h("li", { class: "spread" },
-          h("div", {}, h("span", { class: "host" }, x.host), h("div", { class: "muted small" }, x.reason)),
-          h("div", { class: "row" }, h("strong", {}, x.count),
-            button("Allow", async () => { await patchConfig({ customAllow: [...state.device.device.config.customAllow, x.host] }); }, "ghost small"))))) : h("p", { class: "muted" }, "Nothing blocked in this period.")),
+      h("section", { class: "card" }, h("p", { class: "muted small" }, "VEIL stores what kind of thing was blocked and how often — never which site, image or message. Nobody, including us, can see a user's actual content.")),
       st.tamper.length ? h("section", { class: "card" }, h("h2", {}, "Tamper events"), h("ul", { class: "list" }, st.tamper.map((t) => h("li", {}, h("strong", {}, t.rule), " ", h("span", { class: "muted small" }, when(Date.parse(t.at))))))) : null);
   }
   await load();
