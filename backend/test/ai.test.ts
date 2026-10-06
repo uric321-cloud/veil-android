@@ -76,8 +76,61 @@ describe("AI jobs", () => {
     const job = await model.createJob("classify", { domains: ["adult.example", "maybe.example", "proxy.example", "news.example"] });
     await ai.runJob(job);
     assert.deepEqual((await model.getAiBlocklist()).domains, ["adult.example", "proxy.example"]);
+    assert.deepEqual((await model.getAiBlocklist()).allow, []); // news isn't on the safe list
     assert.equal((await model.getClassification("news.example"))!.block, false);
     assert.equal(await model.getClassification("injected.example"), null);
+  });
+
+  it("auto-approves only low-risk reviews, and only when the admin turned it on", async () => {
+    const { device } = await pairedDevice();
+    await model.updateConfig(device, { aiAutoApprove: "low_risk" });
+    await model.syncDevice(device, { requests: [
+      { localId: "s1", host: "school.example", reason: "homework" },
+      { localId: "s2", host: "risky.example", reason: "pls" },
+      { localId: "s3", host: "cdn.example", reason: "app broken" },
+    ] });
+    const reqs = await model.listRequests(device.id);
+    const byHost = (h: string) => reqs.find((r) => r.host === h)!;
+    fakeClient([
+      { recommendation: "approve", suggestedMinutes: 0, category: "school", risk: "low", explanation: "" },
+      { recommendation: "approve", suggestedMinutes: 0, category: "forum", risk: "medium", explanation: "" },
+      { recommendation: "approve_limited", suggestedMinutes: 30, category: "cdn", risk: "low", explanation: "" },
+    ]);
+    for (const h of ["school.example", "risky.example", "cdn.example"]) {
+      await ai.runJob(await model.createJob("review", { deviceId: device.id, requestId: byHost(h).id }));
+    }
+    const after = async (h: string) => (await model.getRequest(device.id, byHost(h).id))!;
+    assert.equal((await after("school.example")).status, "approved");
+    assert.equal((await after("school.example")).autoApproved, true);
+    assert.equal((await after("risky.example")).status, "pending");
+    const cdn = await after("cdn.example");
+    assert.equal(cdn.status, "approved");
+    assert.ok(cdn.until! > Date.now() + 25 * 60_000 && cdn.until! < Date.now() + 35 * 60_000);
+    const d = (await model.ownedDevice(device.adminId, device.id));
+    assert.deepEqual(d.config.customAllow, ["school.example"]);
+    assert.deepEqual(d.config.tempAllow.map((t) => t.host), ["cdn.example"]);
+  });
+
+  it("leaves requests alone when auto-approval is off", async () => {
+    const { device } = await pairedDevice();
+    await model.syncDevice(device, { requests: [{ localId: "s1", host: "school.example" }] });
+    const [req] = await model.listRequests(device.id);
+    fakeClient([{ recommendation: "approve", suggestedMinutes: 0, category: "school", risk: "low", explanation: "" }]);
+    await ai.runJob(await model.createJob("review", { deviceId: device.id, requestId: req.id }));
+    assert.equal((await model.getRequest(device.id, req.id))!.status, "pending");
+  });
+
+  it("adds confidently safe sites to the shared allow list, never a blocked one", async () => {
+    fakeClient([{ results: [
+      { domain: "school.example", category: "education", confidence: 0.95, reason: "" },
+      { domain: "cdn.example", category: "technology_infrastructure", confidence: 0.9, reason: "" },
+      { domain: "unsure.example", category: "education", confidence: 0.5, reason: "" },
+      { domain: "video.example", category: "video_streaming", confidence: 0.99, reason: "" },
+    ] }]);
+    await ai.runJob(await model.createJob("classify", { domains: ["school.example", "cdn.example", "unsure.example", "video.example"] }));
+    const lists = await model.getAiBlocklist();
+    assert.deepEqual(lists.allow, ["cdn.example", "school.example"]);
+    assert.deepEqual(lists.domains, []);
   });
 
   it("chat keeps a usable settings proposal and drops a malformed one", async () => {

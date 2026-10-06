@@ -11,6 +11,9 @@ export { PACKAGE_RE };
 
 export const TIERS = ["young_child", "child", "teen", "adult", "custom"] as const;
 export const TEXT_ACTIONS = ["ignore", "strike", "bar", "frost"] as const;
+export const WEB_MODES = ["filter", "allowlist"] as const;
+export const AUTO_APPROVE = ["off", "low_risk"] as const;
+export const LEVELS = ["custom", "open", "standard", "strict", "allowlist"] as const;
 
 export interface TempAllow {
   host: string;
@@ -44,6 +47,14 @@ export interface DeviceConfig {
   customAllow: string[];
   tempAllow: TempAllow[];
   aiClassification: boolean;
+  /** "filter": everything except what's blocked. "allowlist": only allowed sites load (see webAllowlist on the phone). */
+  webMode: (typeof WEB_MODES)[number];
+  /** In allowlist mode, also allow sites the AI confidently classified as safe (education, government, app infrastructure...). */
+  aiAutoAllowSafe: boolean;
+  /** "low_risk": requests the AI reviews as low-risk are approved without waiting for the admin. */
+  aiAutoApprove: (typeof AUTO_APPROVE)[number];
+  /** Last preset applied from the dashboard, for display only. */
+  level: (typeof LEVELS)[number];
   screen: {
     enabled: boolean;
     tier: (typeof TIERS)[number];
@@ -101,6 +112,10 @@ export function defaultConfig(): DeviceConfig {
     customAllow: [],
     tempAllow: [],
     aiClassification: true,
+    webMode: "filter",
+    aiAutoAllowSafe: true,
+    aiAutoApprove: "off",
+    level: "standard",
     screen: {
       enabled: true,
       tier: "child",
@@ -227,6 +242,10 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
     customAllow: hosts(p.customAllow, b.customAllow),
     tempAllow: tempAllows(p.tempAllow, b.tempAllow, now),
     aiClassification: bool(p.aiClassification, b.aiClassification),
+    webMode: oneOf(p.webMode, WEB_MODES, b.webMode ?? "filter"),
+    aiAutoAllowSafe: bool(p.aiAutoAllowSafe, b.aiAutoAllowSafe ?? true),
+    aiAutoApprove: oneOf(p.aiAutoApprove, AUTO_APPROVE, b.aiAutoApprove ?? "off"),
+    level: oneOf(p.level, LEVELS, b.level ?? "custom"),
     screen: {
       enabled: bool(s.enabled, b.screen.enabled),
       tier: oneOf(s.tier, TIERS, b.screen.tier),

@@ -39,6 +39,8 @@ object RemoteConfig {
             if (s.tempAllows != m) s.tempAllows = m
         }
         bool(c, "aiClassification") { if (s.aiClassification != it) s.aiClassification = it }
+        if (c.has("webMode")) { val on = c.optString("webMode") == "allowlist"; if (s.webAllowlistMode != on) s.webAllowlistMode = on }
+        bool(c, "aiAutoAllowSafe") { if (s.aiAutoAllowSafe != it) s.aiAutoAllowSafe = it }
 
         c.optJSONObject("screen")?.let { sc ->
             bool(sc, "enabled") { if (s.textEnabled != it) s.textEnabled = it }

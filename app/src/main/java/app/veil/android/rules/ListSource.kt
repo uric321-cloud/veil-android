@@ -65,10 +65,43 @@ class ListSource(private val context: Context) {
         }
     }
 
-    fun saveAiBlocklist(domains: List<String>) {
-        val tmp = File(context.filesDir, "ai-blocklist.tmp")
+    fun saveAiBlocklist(domains: List<String>) = writeAtomically(aiBlockFile(), domains)
+
+    private fun aiAllowFile(): File = File(context.filesDir, "ai-allowlist.txt")
+    @Volatile private var aiAllow: DomainSet? = null
+    @Volatile private var aiAllowStamp: Long = -1
+
+    /** The AI's shared list of clearly safe sites, for allowed-sites-only mode. */
+    fun aiAllowSet(): DomainSet {
+        val f = aiAllowFile()
+        val stamp = if (f.exists()) f.lastModified() else 0L
+        aiAllow?.let { if (aiAllowStamp == stamp) return it }
+        synchronized(this) {
+            val set = if (f.exists()) f.inputStream().use { DomainSet(readDomains(it)) } else DomainSet(emptyList())
+            aiAllow = set
+            aiAllowStamp = stamp
+            return set
+        }
+    }
+
+    fun saveAiAllowlist(domains: List<String>) = writeAtomically(aiAllowFile(), domains)
+
+    @Volatile private var essentials: DomainSet? = null
+
+    fun essentialsSet(): DomainSet {
+        essentials?.let { return it }
+        synchronized(this) {
+            essentials?.let { return it }
+            val set = context.assets.open("lists/essentials.txt").use { DomainSet(readDomains(it)) }
+            essentials = set
+            return set
+        }
+    }
+
+    private fun writeAtomically(target: File, domains: List<String>) {
+        val tmp = File(target.path + ".tmp")
         tmp.writeText(domains.joinToString("\n"))
-        if (!tmp.renameTo(aiBlockFile())) { aiBlockFile().delete(); tmp.renameTo(aiBlockFile()) }
+        if (!tmp.renameTo(target)) { target.delete(); tmp.renameTo(target) }
     }
 
     private fun readDomains(stream: InputStream): List<String> {

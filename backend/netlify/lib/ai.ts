@@ -1,9 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeConfig } from "./config.ts";
 import {
-  appendChat, finishJob, getChat, getClassification, getRequest, getSummary, listEvents, listRequests,
+  appendChat, decideRequest, finishJob, getChat, getClassification, getRequest, getSummary, listEvents, listRequests,
   ownedDevice, saveClassifications, saveRequest, saveSummary, type AiReview, type Classification,
-  type Device, type DeviceEvent, type Job, type Summary,
+  type Device, type DeviceEvent, type Job, type Summary, type UnblockRequest,
 } from "./model.ts";
 import { kv } from "./store.ts";
 
@@ -142,6 +142,14 @@ const CLASSIFY_SCHEMA = {
 const AUTO_BLOCK = new Set(["adult", "bypass_proxy_vpn_dns"]);
 const AUTO_BLOCK_CONFIDENCE = 0.85;
 
+/**
+ * Safe enough to open on an allowed-sites-only phone without asking. Deliberately
+ * narrow: no social media, video, news, shopping or search, which can all lead
+ * anywhere; app infrastructure is included so allowed apps keep working.
+ */
+const AUTO_ALLOW = new Set(["education", "government", "technology_infrastructure", "productivity", "finance", "health"]);
+const AUTO_ALLOW_CONFIDENCE = 0.85;
+
 export async function classifyDomains(domains: string[]): Promise<Classification[]> {
   const out: Classification[] = [];
   for (let i = 0; i < domains.length; i += 50) {
@@ -165,6 +173,7 @@ export async function classifyDomains(domains: string[]): Promise<Classification
         confidence,
         reason: String(r.reason ?? "").slice(0, 200),
         block: AUTO_BLOCK.has(r.category) && confidence >= AUTO_BLOCK_CONFIDENCE,
+        allow: AUTO_ALLOW.has(r.category) && confidence >= AUTO_ALLOW_CONFIDENCE,
         at: now,
       });
     }
@@ -289,6 +298,21 @@ export async function chat(device: Device, message: string): Promise<{ reply: st
   return { reply: res.reply, proposal };
 }
 
+/**
+ * When the admin turned on auto-approval, a low-risk AI recommendation is
+ * applied straight away instead of waiting for the admin. Anything else
+ * (medium/high risk, deny, unknown) still waits for a person.
+ */
+export async function maybeAutoApprove(device: Device, r: UnblockRequest): Promise<boolean> {
+  if (device.config.aiAutoApprove !== "low_risk" || r.status !== "pending" || !r.ai) return false;
+  if (r.ai.risk !== "low" || r.ai.recommendation === "deny") return false;
+  const minutes = r.kind !== "app" && r.ai.recommendation === "approve_limited" ? Math.max(15, r.ai.suggestedMinutes || 60) : 0;
+  const decided = await decideRequest(device, r.id, true, minutes, "Approved automatically: the AI review found it low-risk.");
+  decided.autoApproved = true;
+  await saveRequest(decided);
+  return true;
+}
+
 // ------------------------------------------------------------------ job runner (background function)
 
 export async function runJob(job: Job): Promise<void> {
@@ -303,6 +327,7 @@ export async function runJob(job: Job): Promise<void> {
           ? await reviewAppRequest(device, r.host, r.label ?? r.host, r.reason)
           : await reviewRequest(device, r.host, r.reason, await listEvents(deviceId, 7));
         await saveRequest(r);
+        await maybeAutoApprove(device, r);
         await finishJob(job, r.ai);
         break;
       }

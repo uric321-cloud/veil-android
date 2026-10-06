@@ -75,7 +75,9 @@ object RemoteSync {
             VeilLog.w("Remote check-in failed: ${r.lastSyncError}")
         } finally {
             notifyListener()
-            if (r.isPaired || r.pendingPairCode.isNotEmpty()) schedule(r.pollSeconds.toLong())
+            // While a request waits for an answer, check back sooner so an AI or admin decision lands in seconds.
+            val waiting = r.isPaired && r.requests().any { it.status == "pending" && it.sent }
+            if (r.isPaired || r.pendingPairCode.isNotEmpty()) schedule(if (waiting) minOf(20L, r.pollSeconds.toLong()) else r.pollSeconds.toLong())
         }
     }
 
@@ -223,6 +225,8 @@ object RemoteSync {
             val res = RemoteClient(r.server, r.token).get("/api/device/ai-blocklist")
             val arr = res.optJSONArray("domains") ?: JSONArray()
             ListSource(ctx).saveAiBlocklist((0 until arr.length()).mapNotNull { RuleStore.normalizeHost(arr.optString(it)) })
+            val allow = res.optJSONArray("allow") ?: JSONArray()
+            ListSource(ctx).saveAiAllowlist((0 until allow.length()).mapNotNull { RuleStore.normalizeHost(allow.optString(it)) })
             RuleStore.get(ctx).aiBlocklistVersion = res.optInt("version", version)
         } catch (t: Throwable) {
             VeilLog.w("AI blocklist download failed: ${t.message}")

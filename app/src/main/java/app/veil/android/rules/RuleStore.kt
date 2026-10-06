@@ -117,6 +117,16 @@ class RuleStore private constructor(context: Context) {
         get() = prefs.getInt(K_AI_BLOCK_VERSION, 0)
         set(v) = prefs.edit().putInt(K_AI_BLOCK_VERSION, v).apply()
 
+    /** Admin's "allowed sites only" mode: everything else gets NXDOMAIN. */
+    var webAllowlistMode: Boolean
+        get() = prefs.getBoolean(K_WEB_ALLOWLIST, false)
+        set(v) = prefs.edit().putBoolean(K_WEB_ALLOWLIST, v).apply()
+
+    /** In allowlist mode, also allow the AI's shared list of clearly safe sites. */
+    var aiAutoAllowSafe: Boolean
+        get() = prefs.getBoolean(K_AI_ALLOW_SAFE, true)
+        set(v) = prefs.edit().putBoolean(K_AI_ALLOW_SAFE, v).apply()
+
     var aiClassification: Boolean
         get() = prefs.getBoolean(K_AI_CLASSIFY, true)
         set(v) = prefs.edit().putBoolean(K_AI_CLASSIFY, v).apply()
@@ -272,6 +282,7 @@ class RuleStore private constructor(context: Context) {
         append(" bypassProtection=").append(bypassProtectionEnabled)
         append(" upstreamFamily=").append(upstreamFamilyFilter)
         append(" customBlock=").append(customBlock.size).append(" customAllow=").append(customAllow.size)
+        append(" allowlistMode=").append(webAllowlistMode)
         append(" tempAllow=").append(liveTempAllows().size).append(" aiBlocklistVersion=").append(aiBlocklistVersion)
         append(" pin=").append(hasPin)
         append(" listCount=").append(listDomainCount).append(" listUpdatedAt=").append(listUpdatedAt)
@@ -313,6 +324,8 @@ class RuleStore private constructor(context: Context) {
         const val K_TEMP_ALLOW = "temp_allow"
         const val K_AI_BLOCK_VERSION = "ai_blocklist_version"
         const val K_AI_CLASSIFY = "ai_classification"
+        const val K_WEB_ALLOWLIST = "web_allowlist_mode"
+        const val K_AI_ALLOW_SAFE = "ai_auto_allow_safe"
 
         // ---- screen filter keys ----
         const val K_SCREEN_WANTED = "screen_protection_wanted"
@@ -329,7 +342,7 @@ class RuleStore private constructor(context: Context) {
         const val K_TEXT_TOTAL = "text_covered_total"
 
         /** Keys whose change means the DNS matcher must be rebuilt. */
-        val RULE_KEYS = setOf(K_ADULT, K_KEYWORDS_ON, K_SAFESEARCH, K_YT_STRICT, K_BYPASS, K_UPSTREAM_FAMILY, K_BLOCK, K_ALLOW, K_KEYWORDS, K_LIST_UPDATED, K_TEMP_ALLOW, K_AI_BLOCK_VERSION)
+        val RULE_KEYS = setOf(K_ADULT, K_KEYWORDS_ON, K_SAFESEARCH, K_YT_STRICT, K_BYPASS, K_UPSTREAM_FAMILY, K_BLOCK, K_ALLOW, K_KEYWORDS, K_LIST_UPDATED, K_TEMP_ALLOW, K_AI_BLOCK_VERSION, K_WEB_ALLOWLIST, K_AI_ALLOW_SAFE)
 
         /** Keys whose change means the text engine must be rebuilt. */
         val SCREEN_RULE_KEYS = setOf(K_TEXT_ON, K_TEXT_TIER, K_TEXT_LOGONLY, K_TEXT_DEOBF, K_CUSTOM_MILD, K_CUSTOM_STRONG, K_CUSTOM_EXPLICIT, K_TEXT_BLOCK, K_TEXT_ALLOW, K_SAFELIST)

@@ -255,6 +255,8 @@ class VeilVpnService : VpnService() {
                 val r = DnsMessage.nxDomain(payload, q)
                 writeToTun(Packets.udpReply(pkt, r, r.size))
                 onBlocked(q.name, decision)
+                // In allowed-sites-only mode, unknown sites go to AI classification so safe ones open soon.
+                if (decision.reason == Matcher.NOT_ALLOWED) EventQueue.unknownSite(q.name)
             }
             is Decision.NoData -> {
                 val r = DnsMessage.noData(payload, q)

@@ -464,7 +464,7 @@ function viewRequests(root, data) {
     h("section", { class: "card" }, h("h2", {}, "Waiting for you"), pendingList),
     h("section", { class: "card" }, h("h2", {}, "Earlier"), done.length ? h("ul", { class: "list" }, done.map((r) => h("li", { class: "spread" },
       h("div", {}, requestTitle(r), h("div", { class: "muted small" }, r.reason || "")),
-      h("div", {}, r.status === "approved" ? pill("good", r.until === 0 ? "Always allowed" : r.until > Date.now() ? `Allowed until ${new Date(r.until).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : "Allowance ended") : pill("neutral", "Denied"))))) : h("p", { class: "muted" }, "No earlier requests.")));
+      h("div", { class: "row" }, r.autoApproved ? pill("neutral", "Auto-approved by AI") : null, r.status === "approved" ? pill("good", r.until === 0 ? "Always allowed" : r.until > Date.now() ? `Allowed until ${new Date(r.until).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : "Allowance ended") : pill("neutral", "Denied"))))) : h("p", { class: "muted" }, "No earlier requests.")));
 }
 
 function requestTitle(r) {
@@ -624,11 +624,42 @@ function listEditor(title, help, items, placeholder, save) {
 
 // ---------------- web filter
 
+const STRICT_INAPP = ["whatsapp_updates", "youtube_shorts", "instagram_reels", "instagram_explore", "google_discover"];
+
+/** One-tap presets. Each sets a coherent group of settings; everything stays adjustable afterwards. */
+function presets(c) {
+  const base = { adultList: true, keywordsEnabled: true, safeSearch: true, bypassProtection: true, upstreamFamily: true };
+  const strictInApp = { enabled: [...new Set([...(c.inApp?.enabled || []), ...STRICT_INAPP])] };
+  return [
+    ["open", "Open", "Adult sites and bypasses blocked, SafeSearch on. Words covered only at the adult level.",
+      { ...base, level: "open", webMode: "filter", youtubeStrict: false, screen: { tier: "adult", deobfuscate: false } }],
+    ["standard", "Standard", "Adds teen-level word covering. A good default for most adults and teens.",
+      { ...base, level: "standard", webMode: "filter", youtubeStrict: false, screen: { tier: "teen", deobfuscate: false } }],
+    ["strict", "Strict", "Strict YouTube, child-level words including disguised spellings, and no Shorts, Reels, Explore, Status or Discover feeds.",
+      { ...base, level: "strict", webMode: "filter", youtubeStrict: true, screen: { tier: "child", deobfuscate: true }, inApp: strictInApp }],
+    ["allowlist", "Allowed sites only", "Everything in Strict, and only sites you allow (or the AI rates clearly safe) load. Like a whitelisted browser, but for every app.",
+      { ...base, level: "allowlist", webMode: "allowlist", aiAutoAllowSafe: true, youtubeStrict: true, screen: { tier: "child", deobfuscate: true }, inApp: strictInApp }],
+  ];
+}
+
 function viewFiltering(root, data) {
   const c = data.device.config;
-  const set = (key) => (v) => patchConfig({ [key]: v });
+  const set = (key) => (v) => patchConfig({ [key]: v, level: "custom" });
   const temp = c.tempAllow.filter((t) => t.until > Date.now());
-  add(root, 
+  const levelCard = h("section", { class: "card stack" }, h("h2", {}, "Filter level"),
+    h("p", { class: "muted small" }, c.level && c.level !== "custom" ? `Current level: ${presets(c).find((p) => p[0] === c.level)?.[1] ?? c.level}.` : "Current level: custom settings."),
+    h("div", { class: "grid", style: "grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px" },
+      presets(c).map(([id, name, desc, patch]) => h("div", { class: "card", style: `margin:0;${c.level === id ? "border-color:var(--accent);border-width:2px" : ""}` },
+        h("h3", {}, name), h("p", { class: "muted small" }, desc),
+        c.level === id ? pill("good", "Active") : button(`Use ${name}`, async () => {
+          if (id === "allowlist" && !confirm("Only allowed sites will load on this phone. Apps may need a minute while VEIL learns which of their servers are safe. Continue?")) return;
+          await patchConfig(patch);
+          route();
+        }, "secondary small")))),
+    switchRow("Allowed sites only", "Only sites on the Always allow list, temporary allows and the phone's essential services load.", c.webMode === "allowlist", (v) => patchConfig({ webMode: v ? "allowlist" : "filter", level: "custom" })),
+    switchRow("Let AI allow clearly safe sites", "In allowed-sites-only mode, sites the AI is confident are education, government, banking, health or app infrastructure open without asking. Never social media, video, news or shopping.", c.aiAutoAllowSafe !== false, set("aiAutoAllowSafe")),
+    switchRow("Approve low-risk requests automatically", "When the AI reviews an unblock request as low-risk, it's approved straight away (the phone gets it within a minute). Anything else still waits for you.", c.aiAutoApprove === "low_risk", (v) => patchConfig({ aiAutoApprove: v ? "low_risk" : "off" })));
+  add(root, levelCard, 
     h("section", { class: "card" }, h("h2", {}, "Web filter"),
       switchRow("Adult content list", "Blocks hundreds of thousands of known adult sites.", c.adultList, set("adultList")),
       switchRow("Keyword blocking", "Blocks any site whose name contains one of the keywords below.", c.keywordsEnabled, set("keywordsEnabled")),

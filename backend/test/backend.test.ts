@@ -103,6 +103,16 @@ describe("config", () => {
     }
   });
 
+  it("defaults the web mode and auto-approval safely, including for old configs", () => {
+    const legacy = defaultConfig() as any;
+    for (const k of ["webMode", "aiAutoApprove", "aiAutoAllowSafe", "level"]) delete legacy[k];
+    const c = sanitizeConfig({ webMode: "everything", aiAutoApprove: "always" }, legacy);
+    assert.equal(c.webMode, "filter");
+    assert.equal(c.aiAutoApprove, "off");
+    assert.equal(c.aiAutoAllowSafe, true);
+    assert.equal(sanitizeConfig({ webMode: "allowlist", level: "allowlist" }).webMode, "allowlist");
+  });
+
   it("drops expired temporary allows", () => {
     const now = Date.now();
     const c = sanitizeConfig({ tempAllow: [{ host: "a.com", until: now - 1 }, { host: "b.com", until: now + 60_000 }] });
@@ -286,7 +296,7 @@ describe("AI blocklist", () => {
       { domain: "news.example", category: "news", block: false, confidence: 0.9, reason: "", at: 0 },
     ]);
     const bl = await body(await call("GET", "/api/device/ai-blocklist", { token: pair.token, csrf: false }));
-    assert.deepEqual(bl, { version: 1, domains: ["adult.example"] });
+    assert.deepEqual(bl, { version: 1, domains: ["adult.example"], allow: [] });
     await model.saveClassifications([{ domain: "adult.example", category: "adult", block: true, confidence: 0.95, reason: "", at: 0 }]);
     assert.equal((await model.getAiBlocklist()).version, 1); // no change, no new version
   });

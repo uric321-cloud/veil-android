@@ -102,12 +102,15 @@ export interface UnblockRequest {
   decidedAt?: number;
   note?: string;
   ai?: AiReview;
+  autoApproved?: boolean;
 }
 
 export interface Classification {
   domain: string;
   category: string;
   block: boolean;
+  /** Confidently safe: allowed for phones in allowed-sites-only mode that opted in. */
+  allow?: boolean;
   confidence: number;
   reason: string;
   at: number;
@@ -602,14 +605,20 @@ export async function getClassification(domain: string): Promise<Classification 
 export async function saveClassifications(list: Classification[]): Promise<void> {
   for (const c of list) await kv().set(K.classify(c.domain), c);
   const toBlock = list.filter((c) => c.block).map((c) => c.domain);
-  if (toBlock.length === 0) return;
+  const toAllow = list.filter((c) => c.allow && !c.block).map((c) => c.domain);
+  if (toBlock.length === 0 && toAllow.length === 0) return;
   const bl = await getAiBlocklist();
-  const merged = new Set([...bl.domains, ...toBlock]);
-  if (merged.size !== bl.domains.length) await kv().set(K.aiBlocklist(), { version: bl.version + 1, domains: [...merged].sort() });
+  const blocked = new Set([...bl.domains, ...toBlock]);
+  const allowed = new Set([...bl.allow, ...toAllow].filter((d) => !blocked.has(d)));
+  if (blocked.size !== bl.domains.length || allowed.size !== bl.allow.length) {
+    await kv().set(K.aiBlocklist(), { version: bl.version + 1, domains: [...blocked].sort(), allow: [...allowed].sort() });
+  }
 }
 
-export async function getAiBlocklist(): Promise<{ version: number; domains: string[] }> {
-  return (await kv().get<{ version: number; domains: string[] }>(K.aiBlocklist())) ?? { version: 0, domains: [] };
+/** The shared AI lists: `domains` blocked for everyone, `allow` used only by allowed-sites-only phones. */
+export async function getAiBlocklist(): Promise<{ version: number; domains: string[]; allow: string[] }> {
+  const v = await kv().get<{ version: number; domains: string[]; allow?: string[] }>(K.aiBlocklist());
+  return { version: v?.version ?? 0, domains: v?.domains ?? [], allow: v?.allow ?? [] };
 }
 
 export async function createJob(kind: Job["kind"], payload: Record<string, unknown>): Promise<Job> {

@@ -164,6 +164,23 @@ fun main() {
     check("single label allowed", m.decide("printer", 1) is Decision.Allow)
     check("yt strict", SafeSearch.canonicalFor("youtubei.googleapis.com", true) == "restrict.youtube.com")
 
+    println("Allowed sites only")
+    val strict = Matcher(
+        adult = adult, bypassHosts = DomainSet(listOf("dns.google")), customBlock = DomainSet(emptyList()),
+        customAllow = DomainSet(listOf("school.example")), keywords = listOf("porn"), safeSearch = true,
+        youtubeStrict = false, stripHttpsRecords = true, aiBlock = null, allowOnly = true,
+        essentials = DomainSet(listOf("connectivitycheck.gstatic.com", "whatsapp.net")),
+        aiAllow = DomainSet(listOf("gov.example"))
+    )
+    check("allowed site works", strict.decide("www.school.example", 1) is Decision.AllowUnfiltered)
+    check("essential service works", strict.decide("connectivitycheck.gstatic.com", 1) is Decision.Allow)
+    check("essential subdomain works", strict.decide("g.whatsapp.net", 1) is Decision.Allow)
+    check("AI-safe site works", strict.decide("forms.gov.example", 1) is Decision.Allow)
+    val other = strict.decide("news.example", 1)
+    check("anything else is blocked", other is Decision.Block && other.reason == Matcher.NOT_ALLOWED)
+    check("bypass still wins over essentials logic", strict.decide("dns.google", 1).let { it is Decision.Block && it.reason != Matcher.NOT_ALLOWED })
+    check("keyword still blocks an AI-safe name", strict.decide("porn.gov.example", 1) is Decision.Block)
+
     println(if (failures == 0) "ALL PASSED" else "$failures FAILURES")
     if (failures > 0) System.exit(1)
 }
