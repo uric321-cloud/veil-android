@@ -2,9 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeConfig } from "./config.ts";
 import {
   appendChat, decideRequest, finishJob, getChat, getClassification, getRequest, getSummary, listEvents, listRequests,
-  ownedDevice, recordAppClassification, saveClassifications, saveRequest, saveSummary, type AiReview, type AppDecision,
+  getDeviceForTest, ownedDevice, recordAppClassification, saveClassifications, saveRequest, saveSummary, type AiReview, type AppDecision,
   type Classification, type Device, type DeviceEvent, type Job, type Summary, type UnblockRequest,
 } from "./model.ts";
+import { notifyAdmin } from "./notify.ts";
 import { kv } from "./store.ts";
 
 const MODEL = "claude-opus-5-5";
@@ -409,6 +410,11 @@ export async function runJob(job: Job): Promise<void> {
           : await reviewRequest(device, r.host, r.reason, await listEvents(deviceId, 7));
         await saveRequest(r);
         await maybeAutoDecide(device, r);
+        const after = await getRequest(deviceId, requestId);
+        if (after?.status === "pending") {
+          const what = after.kind === "app" ? `App needs approval: ${after.label ?? after.host}` : `Website needs approval: ${after.host}`;
+          await notifyAdmin(device.adminId, { title: what, body: `On ${device.name}. ${after.ai?.explanation ?? ""}`.trim(), path: `/#/device/${device.id}/requests`, tag: `req-${device.id}` });
+        }
         await finishJob(job, r.ai);
         break;
       }
@@ -423,6 +429,10 @@ export async function runJob(job: Job): Promise<void> {
         const { deviceId, apps } = job.payload as { deviceId: string; apps: { package: string; label: string }[] };
         const results = await classifyApps((apps ?? []).slice(0, 200));
         const counts = await recordAppClassification(deviceId, results);
+        if (counts.asked > 0) {
+          const dev = await getDeviceForTest(deviceId);
+          if (dev) await notifyAdmin(dev.adminId, { title: `${counts.asked} app${counts.asked > 1 ? "s" : ""} need approval`, body: `On ${dev.name}. VEIL approved ${counts.approved} and blocked ${counts.blocked} automatically.`, path: `/#/device/${deviceId}/requests`, tag: `apps-${deviceId}` });
+        }
         await finishJob(job, counts);
         break;
       }
