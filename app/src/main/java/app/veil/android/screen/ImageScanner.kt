@@ -62,8 +62,10 @@ class ImageScanner(private val service: AccessibilityService, private val execut
      * cleared it as safe, so an image is never shown before it has been checked.
      * Otherwise a region is covered only after the model flags it.
      */
-    fun scan(regions: List<ImgRegion>, strictness: String, failClosed: Boolean, onDone: (covers: List<Rect>, newlyCovered: Int) -> Unit) {
-        if (!supported || regions.isEmpty()) return
+    fun scan(regions: List<ImgRegion>, strictness: String, failClosed: Boolean, faceSink: ((Bitmap) -> Unit)? = null, onDone: (covers: List<Rect>, newlyCovered: Int) -> Unit) {
+        // With a faceSink we still want a screenshot even when there are no image
+        // nodes (e.g. a browser web page), so the person-blur layer can run there.
+        if (!supported || (regions.isEmpty() && faceSink == null)) return
         videoPresent = regions.any { it.dynamic }
         val rects = regions.map { it.rect }
         // Refresh covers from what we already know. Fail-closed, this immediately
@@ -81,7 +83,8 @@ class ImageScanner(private val service: AccessibilityService, private val execut
                 k !in verdicts || (r.dynamic && now - (verdictAt[k] ?: 0L) >= VIDEO_TTL_MS)
             }.map { it.rect }
         }
-        if (fresh.isEmpty()) return
+        // Nothing to classify and no faces wanted: skip the screenshot.
+        if (fresh.isEmpty() && faceSink == null) return
         busy = true
         lastRunAt = now
         try {
@@ -93,6 +96,9 @@ class ImageScanner(private val service: AccessibilityService, private val execut
                         hw.close()
                         if (shot != null) {
                             val newly = classify(shot, fresh, strictness)
+                            // Hand the SAME screenshot to the person-blur layer (it owns and
+                            // recycles its copy), so one capture drives both.
+                            faceSink?.let { sink -> try { sink(shot.copy(Bitmap.Config.ARGB_8888, false)) } catch (_: Throwable) {} }
                             shot.recycle()
                             val all = synchronized(this@ImageScanner) { recomputeCovers(rects, failClosed) }
                             onDone(all, newly)
