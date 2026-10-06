@@ -52,7 +52,7 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
-            if (currentTab == "home" || currentTab == "activity") render()
+            if (remote.isPaired || currentTab == "home" || currentTab == "activity") render()
             handler.postDelayed(this, 3000)
         }
     }
@@ -147,20 +147,25 @@ class MainActivity : Activity() {
     }
 
     private fun render() {
+        val managed = remote.isPaired
         val running = VeilVpnService.isRunning
         statusLine.text = when {
+            managed -> "Managed by ${adminName()}"
             running -> "Protection is on · ${store.blockedToday} blocked today"
             store.protectionWanted -> "Protection is off · tap Turn on"
             else -> "Not protecting this phone yet"
         }
         statusLine.setTextColor(if (running) Ui.GOOD else Ui.MUTED)
+        // A managed phone shows one simple screen: no tabs, no list of blocked sites.
+        tabBar.visibility = if (managed) View.GONE else View.VISIBLE
         for ((k, t) in tabViews) t.setTextColor(if (k == currentTab) Ui.ACCENT else Ui.MUTED)
         val scroll = ScrollView(this).apply {
             isFillViewport = true
             layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
         val column = Ui.vertical(this).apply { setPadding(0, Ui.dp(this@MainActivity, 4f), 0, Ui.dp(this@MainActivity, 24f)) }
-        when (currentTab) {
+        if (managed) buildManagedHome(column)
+        else when (currentTab) {
             "rules" -> buildRules(column)
             "activity" -> buildActivity(column)
             "settings" -> buildSettings(column)
@@ -479,6 +484,82 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------ admin / managed mode
 
     private fun adminName(): String = remote.adminName.ifEmpty { "your admin" }
+
+    /** The whole screen a managed phone's user sees: status, request, their requests. */
+    private fun buildManagedHome(col: LinearLayout) {
+        val c = this
+        val running = VeilVpnService.isRunning
+
+        val status = Ui.card(c)
+        status.addView(Ui.text(c, if (running) "Protected" else "Protection is off", 24f, if (running) Ui.GOOD else Ui.BAD, true))
+        status.addView(Ui.caption(c, "This phone is looked after by ${adminName()}. If a website or app you need is blocked, ask for it below — most requests are answered within a minute."))
+        if (!running) status.addView(Ui.wideButton(c, "Turn protection on", filled = true, color = Ui.GOOD) { startProtection() })
+        col.addView(status)
+
+        buildSetupPrompts(col)
+
+        val req = Ui.card(c)
+        req.addView(Ui.heading(c, "Need something allowed?"))
+        req.addView(Ui.wideButton(c, "Request a website") { requestSiteDialog() })
+        req.addView(Ui.wideButton(c, "Request an app", filled = false) { requestAppDialog() })
+        col.addView(req)
+
+        buildRequests(col)
+        col.addView(adminCard())
+    }
+
+    /** Only shown while a needed permission is still off, so a working phone stays uncluttered. */
+    private fun buildSetupPrompts(col: LinearLayout) {
+        val c = this
+        if (!RemoteSync.accessibilityOn(this)) {
+            val card = Ui.card(c)
+            card.addView(Ui.text(c, "Finish setup", 16f, Ui.WARN, true))
+            card.addView(Ui.caption(c, "Turn on VEIL's screen filter so it can cover inappropriate words and images and keep blocked apps closed."))
+            card.addView(Ui.wideButton(c, "Open setup") { startActivity(Intent(c, ScreenFilterActivity::class.java)) })
+            col.addView(card)
+        }
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+            val card = Ui.card(c)
+            card.addView(Ui.caption(c, "To keep protection running, let VEIL run in the background (battery can otherwise stop it overnight)."))
+            card.addView(Ui.wideButton(c, "Allow background running", filled = false) { open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) })
+            col.addView(card)
+        }
+    }
+
+    private fun requestSiteDialog() {
+        val input = Ui.input(this, "example.com")
+        val reason = Ui.input(this, "Why do you need it? (optional)", singleLine = false)
+        val wrap = Ui.vertical(this, 20f).apply {
+            addView(Ui.text(this@MainActivity, "Website address", 13f, Ui.MUTED)); addView(input)
+            addView(Ui.space(this@MainActivity, 10f)); addView(reason)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Request a website")
+            .setMessage("Ask ${adminName()} to allow a website.")
+            .setView(wrap)
+            .setPositiveButton("Send") { _, _ ->
+                if (RemoteSync.requestUnblock(this, input.text.toString(), reason.text.toString())) { toast("Request sent to ${adminName()}"); render() }
+                else toast("Enter a website like example.com")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun requestAppDialog() {
+        val apps = app.veil.android.apps.AppControl.launchableApps(this).filter { it.pkg != packageName }
+        if (apps.isEmpty()) { toast("No apps to request"); return }
+        val labels = apps.map { it.label }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Request an app")
+            .setItems(labels) { _, i ->
+                val a = apps[i]
+                if (RemoteSync.requestApp(this, a.pkg, a.label, "")) toast("Request sent for ${a.label}")
+                render()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
 
     private fun managedNotice() {
         AlertDialog.Builder(this)

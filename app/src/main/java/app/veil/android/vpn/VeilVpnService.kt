@@ -362,10 +362,13 @@ class VeilVpnService : VpnService() {
 
     private fun statusNotification(): Notification {
         val today = store.blockedToday
-        val text = if (running.get()) {
-            if (today == 1L) "1 site blocked today" else "$today sites blocked today"
-        } else "Starting…"
         val admin = RemoteStore.get(this).let { if (it.isPaired) it.adminName.ifEmpty { "an admin" } else null }
+        val text = when {
+            !running.get() -> "Starting…"
+            admin != null -> "Managed by $admin"   // never show counts or site names to a managed user
+            today == 1L -> "1 site blocked today"
+            else -> "$today sites blocked today"
+        }
         return Notification.Builder(this, VeilApp.CHANNEL_STATUS)
             .setSmallIcon(R.drawable.ic_stat_veil)
             .setContentTitle(if (admin != null) "VEIL is protecting this phone · managed by $admin" else "VEIL is protecting this phone")
@@ -408,14 +411,21 @@ class VeilVpnService : VpnService() {
 
     private fun postBlockNotification(host: String, reason: String) {
         try {
-            val n = Notification.Builder(this, VeilApp.CHANNEL_BLOCKS)
+            val admin = RemoteStore.get(this).let { if (it.isPaired) it.adminName.ifEmpty { "your admin" } else null }
+            val b = Notification.Builder(this, VeilApp.CHANNEL_BLOCKS)
                 .setSmallIcon(R.drawable.ic_stat_veil)
-                .setContentTitle("Blocked $host")
-                .setContentText("$reason · tap to review or allow")
                 .setAutoCancel(true)
-                .setContentIntent(mainPendingIntent("activity"))
-                .build()
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_BLOCK, n)
+            if (admin != null) {
+                // Managed phone: never reveal the site's name to the user.
+                b.setContentTitle("A website was blocked")
+                    .setContentText("Open VEIL to ask $admin to allow it.")
+                    .setContentIntent(mainPendingIntent("home"))
+            } else {
+                b.setContentTitle("Blocked $host")
+                    .setContentText("$reason · tap to review or allow")
+                    .setContentIntent(mainPendingIntent("activity"))
+            }
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_BLOCK, b.build())
         } catch (t: Throwable) {
             VeilLog.w("Block notification failed: ${t.message}")
         }
