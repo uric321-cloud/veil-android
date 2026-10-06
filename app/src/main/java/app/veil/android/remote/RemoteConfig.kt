@@ -62,6 +62,17 @@ object RemoteConfig {
             strings(sc, "safeListApps", lowercase = false) { v -> val n = v + context.packageName; if (s.safeListApps != n) s.safeListApps = n }
         }
 
+        c.optJSONObject("schedule")?.let { sch ->
+            bool(sch, "enabled") { if (s.downtimeEnabled != it) s.downtimeEnabled = it }
+            if (sch.has("start")) { val v = sch.optInt("start", s.downtimeStart).coerceIn(0, 1439); if (s.downtimeStart != v) s.downtimeStart = v }
+            if (sch.has("end")) { val v = sch.optInt("end", s.downtimeEnd).coerceIn(0, 1439); if (s.downtimeEnd != v) s.downtimeEnd = v }
+            sch.optJSONArray("days")?.let { arr ->
+                val set = HashSet<String>()
+                for (i in 0 until arr.length()) { val d = arr.optInt(i, -1); if (d in 0..6) set.add(d.toString()) }
+                if (s.downtimeDays != set) s.downtimeDays = set
+            }
+        }
+
         c.optJSONObject("lockdown")?.let { DeviceOwner.applyPolicy(context, DeviceOwner.Policy.from(it)) }
         c.optJSONObject("apps")?.let { app.veil.android.apps.AppControl.setPolicy(context, app.veil.android.apps.AppControl.Policy.from(it)) }
     }

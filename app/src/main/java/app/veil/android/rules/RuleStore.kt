@@ -235,6 +235,26 @@ class RuleStore private constructor(context: Context) {
         get() = prefs.getStringSet(K_URL_PARTS, emptySet()) ?: emptySet()
         set(v) = prefs.edit().putStringSet(K_URL_PARTS, v.toSet()).apply()
 
+    /** Downtime / bedtime: when active, all non-essential apps are blocked. */
+    var downtimeEnabled: Boolean
+        get() = prefs.getBoolean(K_DT_ON, false)
+        set(v) = prefs.edit().putBoolean(K_DT_ON, v).apply()
+
+    /** Window start, minutes since midnight (default 21:00). */
+    var downtimeStart: Int
+        get() = prefs.getInt(K_DT_START, 21 * 60)
+        set(v) = prefs.edit().putInt(K_DT_START, v).apply()
+
+    /** Window end, minutes since midnight (default 07:00). */
+    var downtimeEnd: Int
+        get() = prefs.getInt(K_DT_END, 7 * 60)
+        set(v) = prefs.edit().putInt(K_DT_END, v).apply()
+
+    /** Days the window starts on, as "0".."6" (0=Sunday). Default every day. */
+    var downtimeDays: Set<String>
+        get() = prefs.getStringSet(K_DT_DAYS, setOf("0", "1", "2", "3", "4", "5", "6")) ?: emptySet()
+        set(v) = prefs.edit().putStringSet(K_DT_DAYS, v.toSet()).apply()
+
     val imagesCoveredTotal: Long get() = prefs.getLong(K_IMAGE_TOTAL, 0)
     fun countImagesCovered(n: Int) {
         if (n <= 0) return
@@ -382,6 +402,10 @@ class RuleStore private constructor(context: Context) {
         const val K_URL_ON = "url_filter"
         const val K_URL_BLOCK_UNKNOWN = "url_block_unknown_browsers"
         const val K_URL_PARTS = "url_blocked_parts"
+        const val K_DT_ON = "downtime_enabled"
+        const val K_DT_START = "downtime_start"
+        const val K_DT_END = "downtime_end"
+        const val K_DT_DAYS = "downtime_days"
         const val K_IMAGE_STRICT = "image_strictness"
         const val K_IMAGE_TOTAL = "images_covered_total"
 

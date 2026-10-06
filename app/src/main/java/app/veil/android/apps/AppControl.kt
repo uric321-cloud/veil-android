@@ -130,7 +130,20 @@ object AppControl {
             val known = prefs(c).getStringSet("known_apps", null)
             if (known != null) result += (installed - known - p.allowed)
         }
+        // Downtime / bedtime: block every non-essential app while the window is active.
+        if (downtimeActive(c)) result += installed
         return result - essentials(c)
+    }
+
+    /** Whether the bedtime/downtime window is active right now. */
+    fun downtimeActive(c: Context): Boolean {
+        val s = app.veil.android.rules.RuleStore.get(c)
+        if (!s.downtimeEnabled) return false
+        val cal = java.util.Calendar.getInstance()
+        val dow = cal.get(java.util.Calendar.DAY_OF_WEEK) - 1 // Calendar Sunday=1 -> 0
+        val minute = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val days = s.downtimeDays.mapNotNull { it.toIntOrNull() }.toSet()
+        return app.veil.android.rules.Schedule.activeAt(true, s.downtimeStart, s.downtimeEnd, days, dow, minute)
     }
 
     /** Cached for the accessibility service, which asks on every app switch. */

@@ -564,7 +564,36 @@ function viewApps(root, data) {
     h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", {}, `Apps on the phone (${apps.length})`), h("div", { style: "min-width:200px;flex:1;max-width:320px" }, filter)),
       policy.mode === "off" ? h("p", { class: "muted small" }, "App control is off. Choose a mode above; these switches then say which apps may open.") : null,
       list),
+    downtimeSection(data),
     inAppSection(data));
+}
+
+/** Bedtime / downtime: a daily window during which only the phone essentials work. */
+function downtimeSection(data) {
+  const s = data.device.config.schedule || { enabled: false, start: 21 * 60, end: 7 * 60, days: [0, 1, 2, 3, 4, 5, 6] };
+  const toHHMM = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const toMin = (v) => { const [h0, m0] = String(v).split(":").map(Number); return (h0 || 0) * 60 + (m0 || 0); };
+  const start = h("input", { type: "time", value: toHHMM(s.start) });
+  const end = h("input", { type: "time", value: toHHMM(s.end) });
+  start.addEventListener("change", () => patchConfig({ schedule: { start: toMin(start.value) } }).catch((e) => toast(e.message)));
+  end.addEventListener("change", () => patchConfig({ schedule: { end: toMin(end.value) } }).catch((e) => toast(e.message)));
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const days = new Set(s.days || []);
+  const dayRow = h("div", { class: "row", style: "flex-wrap:wrap;gap:6px" }, dayNames.map((name, i) => {
+    const on = days.has(i);
+    const base = "padding:6px 10px;border-radius:14px;border:1px solid #c7ccd6;cursor:pointer;font-size:13px;";
+    return h("button", { style: base + (on ? "background:#1e9e5a;color:#fff;border-color:#1e9e5a;" : "background:transparent;"), onclick: () => {
+      if (days.has(i)) days.delete(i); else days.add(i);
+      patchConfig({ schedule: { days: [...days].sort() } }).then(route).catch((e) => toast(e.message));
+    } }, name);
+  }));
+  return h("section", { class: "card stack" }, h("h2", {}, "Downtime (bedtime)"),
+    h("p", { class: "muted small" }, "During this window only the phone essentials (calls, messages, home screen, Settings) work – every other app is blocked. A window where the end time is earlier than the start crosses midnight (e.g. 21:00 to 07:00)."),
+    switchRow("Turn on downtime", null, s.enabled, (v) => patchConfig({ schedule: { enabled: v } })),
+    h("div", { class: "row", style: "gap:16px;align-items:flex-end" },
+      h("div", {}, h("label", {}, "From"), start),
+      h("div", {}, h("label", {}, "To"), end)),
+    h("div", {}, h("label", {}, "On these days"), dayRow));
 }
 
 /** Catalog switches grouped by app, plus the admin's own rules. */

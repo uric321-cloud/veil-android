@@ -13,8 +13,8 @@ android {
         applicationId = "app.veil.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.3.6"
+        versionCode = 10
+        versionName = "0.3.7"
 
         // The admin server phones pair with unless told otherwise (pairing links carry their own).
         buildConfigField("String", "DEFAULT_SERVER", "\"https://veil-admin.netlify.app\"")

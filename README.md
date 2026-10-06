@@ -104,6 +104,10 @@ number of phones.
   page is sent back with a short notice. Known browsers are supported by their
   address-bar id; the admin can optionally close browsers VEIL can't read so they
   can't be used to bypass the filter. Toggles under *Web filter → Page (URL) filter*.
+- **Downtime (bedtime)**: a daily window (per-day, crossing midnight supported) in
+  which only the phone essentials (calls, messages, home screen, Settings) work -
+  every other app is blocked, the same way app control blocks apps. Set under the
+  Apps tab. The decision logic (`rules/Schedule.kt`) is unit-tested.
 - **Filter levels**: Open, Standard, Strict, Allowed sites only. In allowed-sites-
   only mode, sites the AI is confident are education, government, banking,
   health or app infrastructure open on their own.
