@@ -599,7 +599,36 @@ function viewApps(root, data) {
       policy.mode === "off" ? h("p", { class: "muted small" }, "App control is off. Choose a mode above; these switches then say which apps may open.") : null,
       list),
     downtimeSection(data),
+    appLimitsSection(data),
     inAppSection(data));
+}
+
+/** Per-app daily time limits: block an app once it hits a daily minute budget. */
+function appLimitsSection(data) {
+  const d = data.device;
+  const apps = d.apps || [];
+  const limits = d.config.appLimits || [];
+  const labelFor = (pkg) => (apps.find((a) => a.package === pkg) || {}).label || pkg;
+  const save = (arr) => patchConfig({ appLimits: arr }).then(route).catch((e) => toast(e.message));
+
+  const rows = limits.map((l) => h("li", { class: "spread" },
+    h("span", {}, `${labelFor(l.package)} — ${l.minutes} min/day`),
+    button("Remove", () => save(limits.filter((x) => x.package !== l.package)), "ghost small")));
+
+  const pick = h("select", {}, [h("option", { value: "" }, "Choose an app…")].concat(
+    apps.filter((a) => !limits.some((l) => l.package === a.package)).map((a) => h("option", { value: a.package }, a.label))));
+  const mins = h("input", { type: "number", min: "1", max: "1440", placeholder: "minutes", style: "width:110px" });
+  const add = button("Add limit", () => {
+    const pkg = pick.value; const m = parseInt(mins.value, 10);
+    if (!pkg || !(m > 0)) return toast("Pick an app and minutes.");
+    save([...limits, { package: pkg, minutes: m }]);
+  });
+
+  return h("section", { class: "card stack" }, h("h2", {}, "Daily time limits"),
+    h("p", { class: "muted small" }, "Block an app once it has been used for this many minutes in a day. Needs the phone's user to grant VEIL “usage access” once. Counts reset at midnight on the phone."),
+    rows.length ? h("ul", { class: "list" }, rows) : h("p", { class: "muted small" }, "No time limits set."),
+    apps.length ? h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" }, pick, mins, add)
+      : h("p", { class: "muted small" }, "The phone hasn't sent its app list yet."));
 }
 
 /** Bedtime / downtime: a daily window during which only the phone essentials work. */

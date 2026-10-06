@@ -132,7 +132,39 @@ object AppControl {
         }
         // Downtime / bedtime: block every non-essential app while the window is active.
         if (downtimeActive(c)) result += installed
+        // Per-app daily time limits: block an app once it's hit today's budget.
+        result += overLimitApps(c).intersect(installed)
         return result - essentials(c)
+    }
+
+    /** Whether VEIL has been granted usage access (needed for per-app time limits). */
+    fun usageAccessGranted(c: Context): Boolean {
+        return try {
+            val ops = c.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+            val mode = ops.unsafeCheckOpNoThrow("android:get_usage_stats", android.os.Process.myUid(), c.packageName)
+            mode == android.app.AppOpsManager.MODE_ALLOWED
+        } catch (_: Throwable) { false }
+    }
+
+    /** Packages that have reached their daily time limit, from today's usage stats. */
+    fun overLimitApps(c: Context): Set<String> {
+        val limits = app.veil.android.rules.RuleStore.get(c).appTimeLimits
+        if (limits.isEmpty() || !usageAccessGranted(c)) return emptySet()
+        return try {
+            val usm = c.getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+            val cal = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+            }
+            val start = cal.timeInMillis
+            val now = System.currentTimeMillis()
+            val stats = usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, start, now) ?: return emptySet()
+            val foreground = HashMap<String, Long>()
+            for (s in stats) foreground[s.packageName] = (foreground[s.packageName] ?: 0L) + s.totalTimeInForeground
+            limits.filter { (pkg, min) -> (foreground[pkg] ?: 0L) >= min.toLong() * 60_000L }.keys
+        } catch (t: Throwable) {
+            VeilLog.w("Usage stats unavailable: ${t.message}"); emptySet()
+        }
     }
 
     /** Whether the bedtime/downtime window is active right now. */

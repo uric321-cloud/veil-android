@@ -222,6 +222,11 @@ class MainActivity : Activity() {
                 "Open") { open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         }
 
+        if (store.appTimeLimits.isNotEmpty()) {
+            healthRow(card, "Can enforce app time limits (usage access)", app.veil.android.apps.AppControl.usageAccessGranted(c),
+                "Open") { open(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+        }
+
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         healthRow(card, "Won't be killed to save battery", pm.isIgnoringBatteryOptimizations(packageName),
             "Fix") { open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
@@ -593,6 +598,12 @@ class MainActivity : Activity() {
             val card = Ui.card(c)
             card.addView(Ui.caption(c, "Let VEIL read notifications, so it can hide message alerts that contain inappropriate words before they show."))
             card.addView(Ui.wideButton(c, "Allow", filled = false) { open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
+            col.addView(card)
+        }
+        if (store.appTimeLimits.isNotEmpty() && !app.veil.android.apps.AppControl.usageAccessGranted(this)) {
+            val card = Ui.card(c)
+            card.addView(Ui.caption(c, "Let VEIL see app usage, so it can apply the daily time limits set for this phone."))
+            card.addView(Ui.wideButton(c, "Allow usage access", filled = false) { open(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) })
             col.addView(card)
         }
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager

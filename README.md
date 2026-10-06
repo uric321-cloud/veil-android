@@ -116,6 +116,10 @@ their own account. They can't invite further co-admins or touch your account.
   which only the phone essentials (calls, messages, home screen, Settings) work -
   every other app is blocked, the same way app control blocks apps. Set under the
   Apps tab. The decision logic (`rules/Schedule.kt`) is unit-tested.
+- **Daily app time limits** (Apps tab): give an app a minutes-per-day budget; once
+  it's used that much today it's blocked like any other blocked app, until midnight.
+  Uses Android usage stats, so the phone's user grants VEIL "usage access" once
+  (surfaced in the health check and setup prompts). Enforced on each check-in.
 - **Filter levels**: Open, Standard, Strict, Allowed sites only. In allowed-sites-
   only mode, sites the AI is confident are education, government, banking,
   health or app infrastructure open on their own.
