@@ -38,6 +38,8 @@ class VeilAccessibilityService : AccessibilityService() {
 
     @Volatile private var currentPackage: String? = null
     private lateinit var images: ImageScanner
+    private var people: PersonScanner? = null
+    @Volatile private var personCovers: List<Cover> = emptyList()
     /** Text and in-app covers from the last scan; image covers are added on top as they arrive. */
     @Volatile private var baseCovers: List<Cover> = emptyList()
     @Volatile private var screenOn = true
@@ -67,6 +69,10 @@ class VeilAccessibilityService : AccessibilityService() {
         bgThread = HandlerThread("veil-screen").apply { start() }
         bgHandler = Handler(bgThread.looper)
         images = ImageScanner(this) { bgHandler.post(it) }
+        people = PersonScanner(this, { bgHandler.post(it) }) { rects ->
+            personCovers = rects.map { Cover(it, TextAction.BAR) }
+            applyCovers(baseCovers + images.covers.map { Cover(it, TextAction.BAR) } + personCovers)
+        }
         screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         bgHandler.post { rebuildEngine() }
         store.registerListener(prefsListener)
@@ -98,6 +104,7 @@ class VeilAccessibilityService : AccessibilityService() {
         if (type == AccessibilityEvent.TYPE_VIEW_SCROLLED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             // What's under each image rectangle changed; look again.
             if (this::images.isInitialized) images.reset()
+            people?.reset(); personCovers = emptyList()
         }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             event.packageName?.let {
@@ -183,9 +190,10 @@ class VeilAccessibilityService : AccessibilityService() {
         // Nothing to do for this app: don't even read the screen (saves battery).
         val cp = currentPackage
         val imagesWanted = store.screenProtectionWanted && store.imageFilter && images.supported
+        val peopleWanted = store.screenProtectionWanted && store.imageFilter && store.blurPeople && (people?.supported == true)
         val webWanted = store.screenProtectionWanted && (store.urlFilter || store.blockUnknownBrowsers)
         val browserHere = cp != null && (BrowserUrlReader.isSupportedBrowser(cp) || BrowserUrlReader.isKnownUnsupportedBrowser(cp))
-        if (!(store.screenProtectionWanted && store.textEnabled) && !imagesWanted && !(webWanted && browserHere) &&
+        if (!(store.screenProtectionWanted && store.textEnabled) && !imagesWanted && !peopleWanted && !(webWanted && browserHere) &&
             (cp == null || InAppRules.forApp(this, cp).isEmpty())) { clearOverlay(); return }
         val root = try { rootInActiveWindow } catch (_: Throwable) { null } ?: run { clearOverlay(); return }
         val pkg = root.packageName?.toString() ?: currentPackage
@@ -214,6 +222,11 @@ class VeilAccessibilityService : AccessibilityService() {
         val textOn = store.screenProtectionWanted && store.textEnabled && !safe
         val eng = engine
         if (imagesWanted && !safe) scanImages(root)
+        // Blur every person: its own screenshot, so it works even on browser
+        // pages where no image nodes are exposed. Staggered so it doesn't collide
+        // with the image classifier's screenshot.
+        if (peopleWanted && !safe) bgHandler.postDelayed({ people?.scan() }, 220)
+        else if (personCovers.isNotEmpty()) { personCovers = emptyList() }
         if (!textOn || eng == null) {
             publish(covers)
             return
@@ -248,7 +261,7 @@ class VeilAccessibilityService : AccessibilityService() {
     /** Shows text/in-app covers plus the image covers currently known. */
     private fun publish(base: List<Cover>) {
         baseCovers = dedupe(base)
-        applyCovers(baseCovers + images.covers.map { Cover(it, TextAction.BAR) })
+        applyCovers(baseCovers + images.covers.map { Cover(it, TextAction.BAR) } + personCovers)
     }
 
     private fun scanImages(root: android.view.accessibility.AccessibilityNodeInfo) {
@@ -261,7 +274,7 @@ class VeilAccessibilityService : AccessibilityService() {
         val regions = ImageScanner.regions(root, minSide, maxRegions)
         images.scan(regions, store.imageStrictness, failClosed) { imageRects, newly ->
             if (newly > 0) store.countImagesCovered(newly)
-            applyCovers(baseCovers + imageRects.map { Cover(it, TextAction.BAR) })
+            applyCovers(baseCovers + imageRects.map { Cover(it, TextAction.BAR) } + personCovers)
         }
         // A playing video keeps changing without firing accessibility events, so
         // keep re-sampling its frames on a timer while one is on screen.
@@ -320,6 +333,7 @@ class VeilAccessibilityService : AccessibilityService() {
         try { unregisterReceiver(screenReceiver) } catch (_: Throwable) {}
         mainHandler.post { overlay.hide() }
         if (this::images.isInitialized) bgHandler.post { images.close() }
+        people?.let { p -> bgHandler.post { p.close() } }
         if (this::bgThread.isInitialized) bgThread.quitSafely()
         VeilLog.i("Accessibility service torn down")
     }
