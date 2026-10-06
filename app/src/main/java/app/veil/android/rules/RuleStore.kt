@@ -255,6 +255,16 @@ class RuleStore private constructor(context: Context) {
         get() = prefs.getStringSet(K_DT_DAYS, setOf("0", "1", "2", "3", "4", "5", "6")) ?: emptySet()
         set(v) = prefs.edit().putStringSet(K_DT_DAYS, v.toSet()).apply()
 
+    /** Version of the proactive site catalog this phone has applied. */
+    var catalogVersion: String
+        get() = prefs.getString(K_CATALOG_VER, "") ?: ""
+        set(v) = prefs.edit().putString(K_CATALOG_VER, v).apply()
+
+    /** Proactive site catalog rules, each encoded "domain\u0001contains\u0001b|a\u0001category". */
+    var catalogRules: Set<String>
+        get() = prefs.getStringSet(K_CATALOG, emptySet()) ?: emptySet()
+        set(v) = prefs.edit().putStringSet(K_CATALOG, v.toSet()).apply()
+
     /** Per-app daily limits: package -> minutes allowed per day. Blocks the app once reached. */
     var appTimeLimits: Map<String, Int>
         get() = (prefs.getStringSet(K_APP_LIMITS, emptySet()) ?: emptySet()).mapNotNull {
@@ -416,6 +426,8 @@ class RuleStore private constructor(context: Context) {
         const val K_DT_END = "downtime_end"
         const val K_DT_DAYS = "downtime_days"
         const val K_APP_LIMITS = "app_time_limits"
+        const val K_CATALOG_VER = "catalog_version"
+        const val K_CATALOG = "catalog_rules"
         const val K_IMAGE_STRICT = "image_strictness"
         const val K_IMAGE_TOTAL = "images_covered_total"
 

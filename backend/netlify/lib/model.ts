@@ -1,6 +1,7 @@
 import { defaultConfig, normalizeHost, PACKAGE_RE, sanitizeConfig, type DeviceConfig } from "./config.ts";
 import { randomInt } from "node:crypto";
 import { effectiveRules, type InAppRule } from "./inapp.ts";
+import { effectiveCatalog, type PathRule } from "./catalog.ts";
 import { hashPassword, id, normalizePairingCode, pairingCode, sha256, token, verifyPassword } from "./crypto.ts";
 import { HttpError, str } from "./http.ts";
 import { kv } from "./store.ts";
@@ -358,6 +359,8 @@ export interface SyncInput {
   apps?: { package: string; label?: string; system?: boolean; blocked?: boolean }[];
   /** Hash of the in-app rules the phone runs; the server sends new rules when it differs. */
   inAppHash?: string;
+  /** Version of the proactive site catalog the phone has; the server sends it when it differs. */
+  catalogVersion?: string;
   commandAcks?: string[];
 }
 
@@ -371,6 +374,9 @@ export interface SyncResult {
     aiBlocklistVersion: number;
     inAppHash: string;
     inAppRules?: InAppRule[];
+    /** Proactive site catalog: version always; rules only when the phone's version differs. */
+    catalogVersion: string;
+    catalogRules?: PathRule[];
     adminName: string;
     pollSeconds: number;
   };
@@ -482,6 +488,7 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
   const admin = await kv().get<Admin>(K.admin(device.adminId));
   const blocklist = await getAiBlocklist();
   const inApp = effectiveRules(device.config.inApp);
+  const catalog = effectiveCatalog();
   return {
     response: {
       serverTime: now,
@@ -492,6 +499,8 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
       aiBlocklistVersion: blocklist.version,
       inAppHash: inApp.hash,
       inAppRules: input.inAppHash === inApp.hash ? undefined : inApp.rules,
+      catalogVersion: catalog.version,
+      catalogRules: input.catalogVersion === catalog.version ? undefined : catalog.rules,
       adminName: admin?.name ?? "your admin",
       pollSeconds: 60,
     },

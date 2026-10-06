@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import { defaultConfig, normalizeHost, sanitizeConfig } from "../netlify/lib/config.ts";
 import { CATALOG, effectiveRules } from "../netlify/lib/inapp.ts";
+import { catalogVerdict, effectiveCatalog } from "../netlify/lib/catalog.ts";
 import { memoryKV, useKV } from "../netlify/lib/store.ts";
 
 const envVars: Record<string, string> = {};
@@ -128,6 +129,21 @@ describe("config", () => {
     const now = Date.now();
     const c = sanitizeConfig({ tempAllow: [{ host: "a.com", until: now - 1 }, { host: "b.com", until: now + 60_000 }] });
     assert.deepEqual(c.tempAllow.map((t) => t.host), ["b.com"]);
+  });
+});
+
+describe("proactive site catalog", () => {
+  it("decides mixed-site sections before the page loads", () => {
+    assert.deepEqual(catalogVerdict("https://www.victoriassecret.com/lingerie/bras"), { action: "block", category: "lingerie" });
+    assert.deepEqual(catalogVerdict("https://victoriassecret.com/lounge/robes"), { action: "allow", category: "loungewear" });
+    assert.equal(catalogVerdict("https://victoriassecret.com/"), null);
+    assert.equal(catalogVerdict("https://wikipedia.org/wiki/Cat"), null);
+  });
+  it("has a stable version and ships the rules", () => {
+    const c = effectiveCatalog();
+    assert.match(c.version, /^[0-9a-f]{16}$/);
+    assert.equal(c.version, effectiveCatalog().version);
+    assert.ok(c.rules.length > 0);
   });
 });
 
