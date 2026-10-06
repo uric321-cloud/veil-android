@@ -4,7 +4,7 @@ import { publicCatalog } from "../lib/inapp.ts";
 import { addSubscription, emailPartner, notificationsConfigured, notifyAdmin, removeSubscription, vapidPublicKey } from "../lib/notify.ts";
 import { HttpError, bearer, cookie, json, readJson, str } from "../lib/http.ts";
 import {
-  addCoAdmin, adminCount, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest, removeCoAdmin,
+  addCoAdmin, adminCount, adminKeys, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest, deviceOwnerPublicKey, removeCoAdmin, setAdminKeys, setDeviceNote,
   getAiBlocklist, getChat, getJob, getSummary, internalSecret, listDevices, listEvents, listRequests, login, logout,
   ownedDevice, pairDevice, publicAdmin, publicDevice, queueCommand, renameDevice, sessionAdmin, setPartnerEmail, syncDevice,
   takeRecoveryCode, updateConfig, type Admin, type Job,
@@ -137,6 +137,18 @@ const routes: [string, RegExp, Handler][] = [
     return json({ coAdmins: await removeCoAdmin(admin, str(body.email, 200)) });
   }],
 
+  // ---------------------------------------------------------------- admin: encryption identity (escape hatch)
+  ["GET", /^\/api\/keys$/, async (req) => {
+    const admin = await requireAdmin(req);
+    return json(adminKeys(admin));
+  }],
+  ["POST", /^\/api\/keys$/, async (req) => {
+    const admin = await requireAdmin(req);
+    const body = await readJson<{ publicKey?: string; encPrivateKey?: string; keySalt?: string }>(req);
+    await setAdminKeys(admin, { publicKey: str(body.publicKey, 4000), encPrivateKey: str(body.encPrivateKey, 8000), keySalt: str(body.keySalt, 200) });
+    return json({ ok: true });
+  }],
+
   // ---------------------------------------------------------------- admin: notifications
   ["GET", /^\/api\/push\/key$/, async (req) => {
     await requireAdmin(req);
@@ -181,8 +193,14 @@ const routes: [string, RegExp, Handler][] = [
       summary: await getSummary(d.id),
       recoveryCode: await takeRecoveryCode(d.id),
       inAppCatalog: publicCatalog(),
+      ownerPublicKey: await deviceOwnerPublicKey(d),
       aiConfigured: aiConfigured(),
     });
+  }],
+  ["POST", /^\/api\/devices\/([\w-]+)\/note$/, async (req, [id]) => {
+    const admin = await requireAdmin(req);
+    const body = await readJson<{ sealed?: string }>(req);
+    return json({ device: publicDevice(await setDeviceNote(await ownedDevice(admin.id, id), str(body.sealed, 20000))) });
   }],
   ["PATCH", /^\/api\/devices\/([\w-]+)$/, async (req, [id]) => {
     const admin = await requireAdmin(req);

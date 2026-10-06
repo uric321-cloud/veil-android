@@ -208,6 +208,31 @@ describe("admin accounts", () => {
   });
 });
 
+describe("encryption escape hatch", () => {
+  it("stores the admin's key material once and serves it back", async () => {
+    const s = await call("POST", "/api/signup", { body: { email: "a@example.com", password: "correct horse battery" } });
+    const cookie = sessionFrom(s);
+    assert.deepEqual(await body(await call("GET", "/api/keys", { cookie })), { publicKey: null, encPrivateKey: null, keySalt: null });
+    const keys = { publicKey: '{"kty":"EC"}', encPrivateKey: '{"iv":"x","ct":"y"}', keySalt: "zzzz" };
+    assert.equal((await call("POST", "/api/keys", { cookie, body: keys })).status, 200);
+    assert.deepEqual(await body(await call("GET", "/api/keys", { cookie })), keys);
+    // Set once: a second attempt is refused so a key can't be silently replaced.
+    assert.equal((await call("POST", "/api/keys", { cookie, body: keys })).status, 409);
+  });
+
+  it("round-trips a sealed item: wrong password can't open it, right one can (zero-knowledge)", async () => {
+    // @ts-expect-error - plain browser module that attaches VeilCrypto to globalThis
+    await import("../public/crypto.js");
+    const C = (globalThis as unknown as { VeilCrypto: any }).VeilCrypto;
+    const id = await C.generateIdentity("correct horse battery");
+    const sealed = await C.sealTo(id.publicJwk, "a private flagged item");
+    assert.equal(sealed.includes("a private flagged item"), false); // ciphertext holds no plaintext
+    await assert.rejects(C.unlock("the wrong password!!", id.encPrivateKey, id.salt));
+    const priv = await C.unlock("correct horse battery", id.encPrivateKey, id.salt);
+    assert.equal(await C.openWith(priv, sealed), "a private flagged item");
+  });
+});
+
 describe("pairing and sync", () => {
   it("pairs with a single-use code and returns the default config", async () => {
     const { pair, code } = await signupAndPair();

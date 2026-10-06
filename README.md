@@ -62,6 +62,14 @@ their own account. They can't invite further co-admins or touch your account.
   settings and status, block counts by category, words/images covered (counts),
   tamper alerts and unblock requests. Never the site, keyword, URL, message,
   photo, page content or other apps' data.
+- **Encrypted escape hatch (zero-knowledge).** Each admin has an ECDH key pair
+  (`backend/public/crypto.js`): the public key is stored on the server; the
+  private key is wrapped with a key derived from the admin's password (PBKDF2)
+  and only ever unwrapped in the admin's browser - the server, and the operator,
+  can never read it. Anything sensitive we ever keep is sealed to the admin's
+  public key (ECIES: ephemeral ECDH -> HKDF -> AES-GCM) so only they can open it.
+  The dashboard's per-phone *Private note* demonstrates it end to end: it is
+  encrypted in the browser before it is saved and is unreadable to anyone else.
 - **Device Owner lockdown.** Set up from the QR code on the first Welcome screen
   of a factory-reset phone (tap six times), or with
   `adb shell dpm set-device-owner app.veil.android/.admin.VeilDeviceAdmin`.

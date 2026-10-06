@@ -193,6 +193,25 @@ async function enablePush() {
   }
 }
 
+// ------------------------------------------------------------------ zero-knowledge escape hatch
+// On sign-up, create the admin's encryption identity; on every sign-in, unlock the
+// private key in the browser only. The server never sees the password or the key.
+async function setupCrypto(password, isSignup) {
+  if (!window.VeilCrypto) return;
+  try {
+    if (isSignup) {
+      const id = await VeilCrypto.generateIdentity(password);
+      await api("POST", "/api/keys", { publicKey: JSON.stringify(id.publicJwk), encPrivateKey: id.encPrivateKey, keySalt: id.salt });
+    }
+    const keys = await api("GET", "/api/keys");
+    if (keys.publicKey) state.publicKey = JSON.parse(keys.publicKey);
+    if (keys.encPrivateKey && keys.keySalt) {
+      try { state.privateKey = await VeilCrypto.unlock(password, keys.encPrivateKey, keys.keySalt); }
+      catch (_) { state.privateKey = null; }
+    }
+  } catch (_) { /* encryption is optional; never block sign-in on it */ }
+}
+
 // ------------------------------------------------------------------ sign in / sign up
 
 function renderAuth(mode) {
@@ -228,6 +247,7 @@ function renderAuth(mode) {
         : await api("POST", "/api/login", { email: email.value, password: password.value });
       state.session = res.admin;
       state.firstRun = false;
+      await setupCrypto(password.value, signup);
       route();
     } catch (ex) {
       err.textContent = ex.message;
@@ -501,7 +521,35 @@ function viewOverview(root, data) {
         catch (e) { toast(e.message); }
       })));
 
-  add(root, h("div", { class: "grid" }, h("div", {}, status, actions, partner), h("div", {}, alerts, report)));
+  add(root, h("div", { class: "grid" }, h("div", {}, status, actions, partner, secureNoteCard(data)), h("div", {}, alerts, report)));
+}
+
+/** The zero-knowledge escape hatch: a note encrypted in the browser to the admin's key. */
+function secureNoteCard(data) {
+  const d = data.device;
+  const area = h("textarea", { rows: 4, style: "width:100%", placeholder: "A private note only you can read…" });
+  const status = h("p", { class: "muted small" });
+  (async () => {
+    if (!window.VeilCrypto) { status.textContent = "This browser doesn't support the encryption used here."; area.disabled = true; return; }
+    if (d.secureNote && state.privateKey) {
+      try { area.value = await VeilCrypto.openWith(state.privateKey, d.secureNote); }
+      catch (_) { status.textContent = "There's an encrypted note here, but it couldn't be opened with this key."; }
+    } else if (d.secureNote) {
+      status.textContent = "An encrypted note is stored. It opens only in your browser after you sign in.";
+    }
+  })();
+  const save = button("Save note", async () => {
+    try {
+      const pub = data.ownerPublicKey ? JSON.parse(data.ownerPublicKey) : state.publicKey;
+      if (!pub) return toast("Encryption isn't set up yet — sign out and back in once.");
+      const sealed = area.value.trim() ? await VeilCrypto.sealTo(pub, area.value) : "";
+      await api("POST", `/api/devices/${d.id}/note`, { sealed });
+      toast(sealed ? "Saved (encrypted)." : "Note cleared.");
+    } catch (e) { toast(e.message); }
+  });
+  return h("section", { class: "card stack" }, h("h2", {}, "Private note (encrypted)"),
+    h("p", { class: "muted small" }, "A note only you can read. It is encrypted in your browser to your own key before it is saved — the server, and we, can never read it. This is the zero-knowledge escape hatch."),
+    area, status, h("div", {}, save));
 }
 
 // ---------------- requests
