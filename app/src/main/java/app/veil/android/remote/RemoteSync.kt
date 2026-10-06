@@ -33,6 +33,9 @@ import java.util.concurrent.TimeUnit
  */
 object RemoteSync {
 
+    /** Notification id for the persistent "protection is off" warning. */
+    private const val NOTIF_PROTECTION = 7001
+
     private val executor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "veil-remote").apply { isDaemon = true }
     }
@@ -144,6 +147,7 @@ object RemoteSync {
 
         val st = status(ctx)
         noteTransitions(r, st)
+        updateProtectionWarning(ctx, st)
         val covered = store.textCoveredTotal
         if (r.lastTextCovered in 0 until covered) EventQueue.text(covered - r.lastTextCovered)
         r.lastTextCovered = covered
@@ -261,6 +265,42 @@ object RemoteSync {
         val expected = "${ctx.packageName}/${VeilAccessibilityService::class.java.name}"
         val flat = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         return flat.split(':').any { it.equals(expected, ignoreCase = true) }
+    }
+
+    /**
+     * A persistent, high-priority "protection is off" notification on the phone
+     * whenever protection is wanted but a guard it needs is off (VPN, the screen
+     * filter, the overlay, or a bypassing Private DNS). Tapping it opens VEIL so
+     * the user can fix it. Cancelled once everything protection needs is on.
+     */
+    private fun updateProtectionWarning(ctx: Context, st: JSONObject) {
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (!st.optBoolean("protection")) { nm.cancel(NOTIF_PROTECTION); return }
+        val problems = ArrayList<String>()
+        if (!st.optBoolean("vpnRunning")) problems.add("the filtering VPN is off")
+        if (st.optBoolean("screenFilter")) {
+            if (!st.optBoolean("accessibilityOn")) problems.add("the screen filter is off")
+            if (!st.optBoolean("overlayAllowed")) problems.add("it can't cover the screen")
+        }
+        if (st.optString("privateDns").isNotEmpty()) problems.add("Private DNS is bypassing it")
+        if (problems.isEmpty()) { nm.cancel(NOTIF_PROTECTION); return }
+        val text = "Protection is not fully on: " + problems.joinToString(", ") + ". Tap to fix."
+        try {
+            val n = Notification.Builder(ctx, VeilApp.CHANNEL_ALERTS)
+                .setSmallIcon(R.drawable.ic_stat_veil)
+                .setContentTitle("VEIL protection needs attention")
+                .setContentText(text)
+                .setStyle(Notification.BigTextStyle().bigText(text))
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .setContentIntent(PendingIntent.getActivity(ctx, 3,
+                    Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                .build()
+            nm.notify(NOTIF_PROTECTION, n)
+        } catch (t: Throwable) {
+            VeilLog.w("Protection warning notification failed: ${t.message}")
+        }
     }
 
     /** Something that was on and is now off becomes a tamper alert for the admin. */

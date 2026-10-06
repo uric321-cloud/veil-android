@@ -367,6 +367,8 @@ export interface SyncResult {
   classifyDomains: string[];
   /** Installed apps not yet classified, to send to the AI (allow-list mode only). */
   classifyApps: { package: string; label: string }[];
+  /** Tamper events reported on this check-in, so the admin can be alerted at once. */
+  newTamper: { rule: string; detail: string }[];
 }
 
 const TAMPER_LABELS: Record<string, string> = {
@@ -395,9 +397,12 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
 
   // Activity
   const events = (Array.isArray(input.events) ? input.events : []).slice(0, 500).map(cleanEvent).filter((e): e is DeviceEvent => !!e);
+  const newTamper: { rule: string; detail: string }[] = [];
   for (const e of events) {
     if (e.type === "tamper") {
-      device.alerts.unshift({ type: e.rule ?? "tamper", at: e.at, detail: TAMPER_LABELS[e.rule ?? ""] ?? e.detail ?? "Tamper alert" });
+      const detail = TAMPER_LABELS[e.rule ?? ""] ?? e.detail ?? "Tamper alert";
+      device.alerts.unshift({ type: e.rule ?? "tamper", at: e.at, detail });
+      newTamper.push({ rule: e.rule ?? "tamper", detail });
     }
   }
   device.alerts = device.alerts.slice(0, MAX_ALERTS);
@@ -482,6 +487,7 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
     reviewRequestIds,
     classifyDomains,
     classifyApps,
+    newTamper,
   };
 }
 

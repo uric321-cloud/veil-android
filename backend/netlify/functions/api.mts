@@ -1,7 +1,7 @@
 import type { Config, Context } from "@netlify/functions";
 import { aggregateEvents, aiConfigured } from "../lib/ai.ts";
 import { publicCatalog } from "../lib/inapp.ts";
-import { addSubscription, notificationsConfigured, removeSubscription, vapidPublicKey } from "../lib/notify.ts";
+import { addSubscription, notificationsConfigured, notifyAdmin, removeSubscription, vapidPublicKey } from "../lib/notify.ts";
 import { HttpError, bearer, cookie, json, readJson, str } from "../lib/http.ts";
 import {
   adminCount, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest,
@@ -69,6 +69,18 @@ const routes: [string, RegExp, Handler][] = [
     for (const rid of result.reviewRequestIds) await kick(req, await createJob("review", { deviceId: device.id, requestId: rid }));
     if (result.classifyDomains.length) await kick(req, await createJob("classify", { domains: result.classifyDomains }));
     if (result.classifyApps.length) await kick(req, await createJob("classify_apps", { deviceId: device.id, apps: result.classifyApps }));
+    // Tamper (protection turned off, VPN revoked, ...) alerts the admin at once,
+    // with or without AI. One notification covers a check-in's events.
+    if (result.newTamper.length) {
+      const first = result.newTamper[0].detail;
+      const more = result.newTamper.length - 1;
+      await notifyAdmin(device.adminId, {
+        title: `Protection alert on ${device.name}`,
+        body: more > 0 ? `${first} (and ${more} more)` : first,
+        path: `/#/device/${device.id}`,
+        tag: `tamper-${device.id}`,
+      });
+    }
     return json(result.response);
   }],
   ["GET", /^\/api\/device\/ai-blocklist$/, async (req) => {
