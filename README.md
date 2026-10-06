@@ -93,6 +93,12 @@ number of phones.
 - **Image filtering** (Android 11+): an on-device MobileNetV2 model (from nsfwjs,
   MIT, see `app/src/main/assets/models/NOTICE.txt`) checks image areas in
   accessibility screenshots and covers explicit ones. Nothing leaves the phone.
+  Strictness runs low / medium / high / **max**. Managed phones default to *max*,
+  which is fail-closed: every image area is covered the moment it appears and
+  revealed only once the model has cleared it, and anything the model is not
+  clearly confident is safe stays covered. Max trades more false covers for the
+  strongest guarantee that explicit images are not shown; no on-device filter can
+  promise a literal zero miss rate.
   Rebuild notes: the model was rebuilt in Keras from the nsfwjs weights and
   exported to TFLite; outputs match the original within 0.007.
 

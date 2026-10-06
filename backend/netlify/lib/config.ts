@@ -11,7 +11,7 @@ export { PACKAGE_RE };
 
 export const TIERS = ["young_child", "child", "teen", "adult", "custom"] as const;
 export const TEXT_ACTIONS = ["ignore", "strike", "bar", "frost"] as const;
-export const IMAGE_STRICTNESS = ["low", "medium", "high"] as const;
+export const IMAGE_STRICTNESS = ["low", "medium", "high", "max"] as const;
 export const WEB_MODES = ["filter", "allowlist"] as const;
 export const AUTO_APPROVE = ["off", "low_risk", "ai_decides"] as const;
 export const LEVELS = ["custom", "open", "standard", "strict", "allowlist"] as const;
@@ -132,7 +132,7 @@ export function defaultConfig(): DeviceConfig {
       allowWords: [],
       safeListApps: [...DEFAULT_SAFELIST],
       images: true,
-      imageStrictness: "high",   // covers explicit and suggestive images on a managed phone
+      imageStrictness: "max",    // fail-closed: cover anything not clearly safe on a managed phone
     },
     lockdown: {
       blockUninstall: true,

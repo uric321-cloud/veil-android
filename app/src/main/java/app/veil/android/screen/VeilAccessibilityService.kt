@@ -177,9 +177,14 @@ class VeilAccessibilityService : AccessibilityService() {
     }
 
     private fun scanImages(root: android.view.accessibility.AccessibilityNodeInfo) {
-        val minSide = (resources.displayMetrics.density * 72).toInt()
-        val regions = ImageScanner.regions(root, minSide)
-        images.scan(regions, store.imageStrictness) { imageRects, newly ->
+        val failClosed = store.imageStrictness == "max"
+        // Max mode covers first and reveals only what the model clears, so it
+        // also looks at smaller images and more of them per screen.
+        val dp = resources.displayMetrics.density
+        val minSide = (dp * (if (failClosed) 40 else 72)).toInt()
+        val maxRegions = if (failClosed) 20 else 12
+        val regions = ImageScanner.regions(root, minSide, maxRegions)
+        images.scan(regions, store.imageStrictness, failClosed) { imageRects, newly ->
             if (newly > 0) store.countImagesCovered(newly)
             val all = baseCovers + imageRects.map { Cover(it, TextAction.BAR) }
             mainHandler.post { overlay.update(all) }

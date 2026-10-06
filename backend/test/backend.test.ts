@@ -53,11 +53,11 @@ describe("config", () => {
     assert.equal(normalizeHost("bad host.com"), null);
   });
 
-  it("new (managed) devices default to allow-list apps and high image strictness", () => {
+  it("new (managed) devices default to allow-list apps and maximum image strictness", () => {
     const c = defaultConfig();
     assert.equal(c.apps.mode, "allowlist");
     assert.equal(c.apps.approveNewApps, true);
-    assert.equal(c.screen.imageStrictness, "high");
+    assert.equal(c.screen.imageStrictness, "max");
     // but an existing phone with no apps policy stays "off", not suddenly locked down
     const legacy = defaultConfig() as any;
     delete legacy.apps;
