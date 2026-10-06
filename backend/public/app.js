@@ -760,7 +760,7 @@ function viewScreen(root, data) {
       switchRow("Warn and log only", "Log what would be covered without covering it.", c.logOnly, set("logOnly")),
       switchRow("Catch disguised words", "Also catches s.p.a.c.e.d, l33t and stretched spellings. More false positives.", c.deobfuscate, set("deobfuscate"))),
     (() => {
-      const strict = h("select", { id: "imgstrict" }, [["low", "Only clearly explicit images"], ["medium", "Explicit images (recommended)"], ["high", "Explicit and suggestive images"]]
+      const strict = h("select", { id: "imgstrict" }, [["low", "Only clearly explicit images"], ["medium", "Explicit images (recommended)"], ["high", "Explicit and suggestive images"], ["max", "Maximum – cover anything not clearly safe"]]
         .map(([v, l]) => h("option", { value: v, selected: v === (c.imageStrictness || "medium") }, l)));
       strict.addEventListener("change", () => patchConfig({ screen: { imageStrictness: strict.value } }).catch((e) => toast(e.message)));
       const supported = data.device.status.imageFilterSupported;
@@ -768,7 +768,8 @@ function viewScreen(root, data) {
         h("p", { class: "muted small" }, "An on-device model checks the images on screen and covers explicit ones, in any app or browser. Images never leave the phone. Needs Android 11 or newer and VEIL's screen filter (accessibility) on."),
         supported === false ? h("div", { class: "banner warn" }, "This phone runs an Android version older than 11, so image covering isn't available on it.") : null,
         switchRow("Cover explicit images", null, c.images !== false, set("images")),
-        h("div", { style: "padding:12px 0" }, h("label", { for: "imgstrict" }, "What to cover"), strict));
+        h("div", { style: "padding:12px 0" }, h("label", { for: "imgstrict" }, "What to cover"), strict),
+        h("p", { class: "muted small" }, "Maximum covers every image until the model has checked it and hides anything it isn't sure is safe – the strongest setting, at the cost of sometimes covering innocent pictures."));
     })(),
     listEditor("Extra words to cover", "Single words, at least 2 letters.", c.blockWords, "word", (v) => patchConfig({ screen: { blockWords: v } })),
     listEditor("Never cover", "Words the filter should leave alone.", c.allowWords, "word", (v) => patchConfig({ screen: { allowWords: v } })),

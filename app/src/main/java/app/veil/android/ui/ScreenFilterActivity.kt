@@ -129,7 +129,7 @@ class ScreenFilterActivity : Activity() {
             img.addView(Ui.switchRow(c, "Cover explicit images", null, store.imageFilter) { v ->
                 withPin({ store.imageFilter = v }, { render() })
             })
-            val labels = mapOf("low" to "Only clearly explicit", "medium" to "Explicit (recommended)", "high" to "Explicit and suggestive")
+            val labels = mapOf("low" to "Only clearly explicit", "medium" to "Explicit (recommended)", "high" to "Explicit and suggestive", "max" to "Maximum (cover anything unsure)")
             img.addView(actionRowImages(c, labels[store.imageStrictness] ?: store.imageStrictness) {
                 val keys = labels.keys.toList()
                 AlertDialog.Builder(this).setTitle("What to cover")

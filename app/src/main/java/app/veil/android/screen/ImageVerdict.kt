@@ -14,13 +14,21 @@ object ImageVerdict {
     const val PORN = 3
     const val SEXY = 4
 
-    /** "low" covers only clearly explicit images; "high" also covers suggestive ones. */
+    /**
+     * "low" covers only clearly explicit images; "high" also covers suggestive
+     * ones; "max" is fail-closed - it covers anything the model is not clearly
+     * confident is a safe (neutral or plain-drawing) image, so borderline and
+     * uncertain images are covered rather than shown. "max" trades more
+     * false covers for the strongest guarantee that nothing explicit slips by.
+     */
     fun shouldCover(scores: FloatArray, strictness: String): Boolean {
         if (scores.size < 5) return false
         val explicit = scores[PORN] + scores[HENTAI]
         val sexy = scores[SEXY]
+        val safe = scores[NEUTRAL] + scores[DRAWING]
         return when (strictness) {
             "low" -> explicit > 0.85f
+            "max" -> safe < 0.90f
             "high" -> explicit > 0.40f || sexy > 0.60f || explicit + sexy > 0.70f
             else -> explicit > 0.60f || sexy > 0.85f
         }

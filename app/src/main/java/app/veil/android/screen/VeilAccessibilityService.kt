@@ -86,7 +86,15 @@ class VeilAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED || event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        // Only the event types that mean the screen's content moved or changed.
+        val type = event.eventType
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+            type != AccessibilityEvent.TYPE_VIEW_SCROLLED) return
+        // Never react to our own overlay or UI: that would loop (scan -> cover ->
+        // event -> scan) and make the screen flash.
+        if (event.packageName == packageName) return
+        if (type == AccessibilityEvent.TYPE_VIEW_SCROLLED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             // What's under each image rectangle changed; look again.
             if (this::images.isInitialized) images.reset()
         }
@@ -169,20 +177,33 @@ class VeilAccessibilityService : AccessibilityService() {
         publish(covers)
     }
 
-    /** Shows text/in-app covers plus the image covers currently known. */
-    private fun publish(base: List<Cover>) {
-        baseCovers = dedupe(base)
-        val all = baseCovers + images.covers.map { Cover(it, TextAction.BAR) }
+    /** The last cover set sent to the overlay, so we never redraw an unchanged screen. */
+    @Volatile private var lastPublished: List<Cover> = emptyList()
+
+    /** Updates the overlay only when the covers changed; a no-op otherwise (no flicker). */
+    private fun applyCovers(all: List<Cover>) {
+        if (all == lastPublished) return
+        lastPublished = all
         mainHandler.post { overlay.update(all) }
     }
 
+    /** Shows text/in-app covers plus the image covers currently known. */
+    private fun publish(base: List<Cover>) {
+        baseCovers = dedupe(base)
+        applyCovers(baseCovers + images.covers.map { Cover(it, TextAction.BAR) })
+    }
+
     private fun scanImages(root: android.view.accessibility.AccessibilityNodeInfo) {
-        val minSide = (resources.displayMetrics.density * 72).toInt()
-        val regions = ImageScanner.regions(root, minSide)
-        images.scan(regions, store.imageStrictness) { imageRects, newly ->
+        val failClosed = store.imageStrictness == "max"
+        // Max mode covers first and reveals only what the model clears, so it
+        // also looks at smaller images and more of them per screen.
+        val dp = resources.displayMetrics.density
+        val minSide = (dp * (if (failClosed) 40 else 72)).toInt()
+        val maxRegions = if (failClosed) 20 else 12
+        val regions = ImageScanner.regions(root, minSide, maxRegions)
+        images.scan(regions, store.imageStrictness, failClosed) { imageRects, newly ->
             if (newly > 0) store.countImagesCovered(newly)
-            val all = baseCovers + imageRects.map { Cover(it, TextAction.BAR) }
-            mainHandler.post { overlay.update(all) }
+            applyCovers(baseCovers + imageRects.map { Cover(it, TextAction.BAR) })
         }
     }
 
@@ -210,6 +231,8 @@ class VeilAccessibilityService : AccessibilityService() {
     }
 
     private fun clearOverlay() {
+        if (lastPublished.isEmpty()) return
+        lastPublished = emptyList()
         mainHandler.post { overlay.clear() }
     }
 

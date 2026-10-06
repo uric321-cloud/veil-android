@@ -46,10 +46,20 @@ class ImageScanner(private val service: AccessibilityService, private val execut
 
     /**
      * Classifies any image areas not seen since the last reset. [onDone] runs on
-     * the executor with the full set of rectangles to cover, only when it changed.
+     * the executor with the full set of rectangles to cover.
+     *
+     * When [failClosed] is set (the "max" strictness level), every on-screen
+     * image region is covered up front and revealed only once the model has
+     * cleared it as safe, so an image is never shown before it has been checked.
+     * Otherwise a region is covered only after the model flags it.
      */
-    fun scan(regions: List<Rect>, strictness: String, onDone: (covers: List<Rect>, newlyCovered: Int) -> Unit) {
-        if (!supported || busy || regions.isEmpty()) return
+    fun scan(regions: List<Rect>, strictness: String, failClosed: Boolean, onDone: (covers: List<Rect>, newlyCovered: Int) -> Unit) {
+        if (!supported || regions.isEmpty()) return
+        // Refresh covers from what we already know. Fail-closed, this immediately
+        // covers any region not yet cleared - including ones that just appeared.
+        val pre = synchronized(this) { recomputeCovers(regions, failClosed) }
+        onDone(pre, 0)
+        if (busy) return
         val now = System.currentTimeMillis()
         if (now - lastRunAt < MIN_INTERVAL_MS) return
         val fresh = synchronized(this) { regions.filter { key(it) !in verdicts } }
@@ -66,7 +76,8 @@ class ImageScanner(private val service: AccessibilityService, private val execut
                         if (shot != null) {
                             val newly = classify(shot, fresh, strictness)
                             shot.recycle()
-                            onDone(covers, newly)
+                            val all = synchronized(this@ImageScanner) { recomputeCovers(regions, failClosed) }
+                            onDone(all, newly)
                         }
                     } catch (t: Throwable) {
                         VeilLog.w("Image scan failed: ${t.message}")
@@ -85,7 +96,19 @@ class ImageScanner(private val service: AccessibilityService, private val execut
         }
     }
 
-    /** Returns how many of [regions] got covered. */
+    /**
+     * The rectangles to cover for the given on-screen [regions], from the
+     * verdicts known so far. Fail-closed, a region with no verdict yet (null)
+     * is covered; otherwise only regions the model flagged (true) are covered.
+     * Caller must hold the lock. Also updates [covers].
+     */
+    private fun recomputeCovers(regions: List<Rect>, failClosed: Boolean): List<Rect> {
+        val list = regions.filter { val v = verdicts[key(it)]; if (failClosed) v != false else v == true }
+        covers = list
+        return list
+    }
+
+    /** Classifies each fresh region into [verdicts]; returns how many got flagged. */
     private fun classify(shot: Bitmap, regions: List<Rect>, strictness: String): Int {
         val model = model() ?: return 0
         var newly = 0
@@ -114,9 +137,6 @@ class ImageScanner(private val service: AccessibilityService, private val execut
             val cover = ImageVerdict.shouldCover(output[0], strictness)
             if (cover) newly++
             synchronized(this) { verdicts[key(r)] = cover }
-        }
-        synchronized(this) {
-            covers = verdicts.filterValues { it }.keys.map { k -> k.split(',').map(String::toInt).let { Rect(it[0], it[1], it[2], it[3]) } }
         }
         return newly
     }
@@ -165,7 +185,7 @@ class ImageScanner(private val service: AccessibilityService, private val execut
          * pages) and large text-free leaf views such as video thumbnails,
          * biggest first.
          */
-        fun regions(root: AccessibilityNodeInfo, minSidePx: Int): List<Rect> {
+        fun regions(root: AccessibilityNodeInfo, minSidePx: Int, maxRegions: Int = MAX_REGIONS): List<Rect> {
             val out = ArrayList<Rect>()
             val stack = ArrayDeque<AccessibilityNodeInfo>()
             stack.addLast(root)
@@ -185,7 +205,7 @@ class ImageScanner(private val service: AccessibilityService, private val execut
                     for (i in 0 until n.childCount) n.getChild(i)?.let { stack.addLast(it) }
                 } catch (_: Throwable) {}
             }
-            return out.distinctBy { key(it) }.sortedByDescending { it.width().toLong() * it.height() }.take(MAX_REGIONS)
+            return out.distinctBy { key(it) }.sortedByDescending { it.width().toLong() * it.height() }.take(maxRegions)
         }
     }
 }
