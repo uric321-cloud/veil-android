@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import { defaultConfig, normalizeHost, sanitizeConfig } from "../netlify/lib/config.ts";
+import { CATALOG, effectiveRules } from "../netlify/lib/inapp.ts";
 import { memoryKV, useKV } from "../netlify/lib/store.ts";
 
 const envVars: Record<string, string> = {};
@@ -76,6 +77,30 @@ describe("config", () => {
     const legacy = defaultConfig() as any;
     delete legacy.apps;
     assert.equal(sanitizeConfig({ youtubeStrict: true }, legacy).apps.mode, "off");
+  });
+
+  it("accepts only known in-app features and well-formed custom rules", () => {
+    const c = sanitizeConfig({ inApp: {
+      enabled: ["whatsapp_updates", "made_up", "whatsapp_updates"],
+      custom: [
+        { app: "com.example.app", match: { viewId: "feed_list" }, action: "leave" },
+        { app: "com.example.app", match: { text: "ab" }, action: "cover" },      // matcher too short
+        { app: "not a package", match: { text: "Explore" } },
+        { app: "com.example.app", match: { desc: "Stories", junk: 1 }, action: "explode" },
+      ],
+    } });
+    assert.deepEqual(c.inApp.enabled, ["whatsapp_updates"]);
+    assert.deepEqual(c.inApp.custom, [
+      { app: "com.example.app", match: { viewId: "feed_list" }, action: "leave" },
+      { app: "com.example.app", match: { desc: "Stories" }, action: "cover" },
+    ]);
+  });
+
+  it("every catalog feature has well-formed rules", () => {
+    for (const f of CATALOG) {
+      assert.ok(f.rules.length > 0, f.id);
+      for (const r of f.rules) assert.ok(r.match.viewId || r.match.text || r.match.desc, f.id);
+    }
   });
 
   it("drops expired temporary allows", () => {
@@ -204,6 +229,19 @@ describe("pairing and sync", () => {
     assert.deepEqual(after.device.config.apps.allowed, ["com.zhiliaoapp.musically"]);
     assert.deepEqual(after.device.config.apps.blocked, []);
     assert.equal(after.requests[0].until, 0);
+  });
+
+  it("sends in-app rules only when the phone's copy is out of date", async () => {
+    const { cookie, pair } = await signupAndPair();
+    await call("PATCH", `/api/devices/${pair.deviceId}/config`, { cookie, body: { inApp: { enabled: ["youtube_shorts"] } } });
+    const first = await body(await call("POST", "/api/device/sync", { token: pair.token, csrf: false, body: { inAppHash: "" } }));
+    assert.ok(first.inAppRules.every((r: any) => r.app === "com.google.android.youtube"));
+    assert.equal(first.inAppHash, effectiveRules({ enabled: ["youtube_shorts"], custom: [] }).hash);
+    const second = await body(await call("POST", "/api/device/sync", { token: pair.token, csrf: false, body: { inAppHash: first.inAppHash } }));
+    assert.equal(second.inAppRules, undefined);
+    const d = await body(await call("GET", `/api/devices/${pair.deviceId}`, { cookie }));
+    assert.ok(d.inAppCatalog.some((f: any) => f.id === "youtube_shorts" && f.appName === "YouTube"));
+    assert.equal(d.inAppCatalog[0].rules, undefined);
   });
 
   it("approving permanently adds the site to the allow list", async () => {

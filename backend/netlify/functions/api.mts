@@ -1,5 +1,6 @@
 import type { Config, Context } from "@netlify/functions";
 import { aggregateEvents, aiConfigured } from "../lib/ai.ts";
+import { publicCatalog } from "../lib/inapp.ts";
 import { HttpError, bearer, cookie, json, readJson, str } from "../lib/http.ts";
 import {
   adminCount, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest,
@@ -126,6 +127,7 @@ const routes: [string, RegExp, Handler][] = [
       requests: await listRequests(d.id, 30),
       summary: await getSummary(d.id),
       recoveryCode: await takeRecoveryCode(d.id),
+      inAppCatalog: publicCatalog(),
       aiConfigured: aiConfigured(),
     });
   }],

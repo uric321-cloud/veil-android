@@ -1,5 +1,6 @@
 import { defaultConfig, normalizeHost, PACKAGE_RE, sanitizeConfig, type DeviceConfig } from "./config.ts";
 import { randomInt } from "node:crypto";
+import { effectiveRules, type InAppRule } from "./inapp.ts";
 import { hashPassword, id, normalizePairingCode, pairingCode, sha256, token, verifyPassword } from "./crypto.ts";
 import { HttpError, str } from "./http.ts";
 import { kv } from "./store.ts";
@@ -324,6 +325,8 @@ export interface SyncInput {
   requests?: { localId: string; kind?: string; host: string; label?: string; reason?: string; at?: number }[];
   unknownDomains?: string[];
   apps?: { package: string; label?: string; system?: boolean; blocked?: boolean }[];
+  /** Hash of the in-app rules the phone runs; the server sends new rules when it differs. */
+  inAppHash?: string;
   commandAcks?: string[];
 }
 
@@ -335,6 +338,8 @@ export interface SyncResult {
     commands: Command[];
     requests: { localId: string; status: UnblockRequest["status"]; until?: number; note?: string }[];
     aiBlocklistVersion: number;
+    inAppHash: string;
+    inAppRules?: InAppRule[];
     adminName: string;
     pollSeconds: number;
   };
@@ -423,6 +428,7 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
   const recent = await listRequests(device.id, 7);
   const admin = await kv().get<Admin>(K.admin(device.adminId));
   const blocklist = await getAiBlocklist();
+  const inApp = effectiveRules(device.config.inApp);
   return {
     response: {
       serverTime: now,
@@ -431,6 +437,8 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
       commands: device.commands,
       requests: recent.filter((r) => r.status !== "pending").map((r) => ({ localId: r.localId, status: r.status, until: r.until, note: r.note })),
       aiBlocklistVersion: blocklist.version,
+      inAppHash: inApp.hash,
+      inAppRules: input.inAppHash === inApp.hash ? undefined : inApp.rules,
       adminName: admin?.name ?? "your admin",
       pollSeconds: 60,
     },

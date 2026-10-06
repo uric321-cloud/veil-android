@@ -158,6 +158,7 @@ object RemoteSync {
                 JSONObject().put("localId", it.localId).put("kind", it.kind).put("host", it.host).put("label", it.label).put("reason", it.reason).put("at", it.at)
             }))
         if (inventoryHash != r.appsHash) body.put("apps", inventory)
+        body.put("inAppHash", app.veil.android.screen.InAppRules.hash(ctx))
         val res = try {
             RemoteClient(r.server, r.token).post("/api/device/sync", body)
         } catch (t: Throwable) {
@@ -181,6 +182,7 @@ object RemoteSync {
             VeilLog.i("Applied admin settings v${r.configVersion}")
         }
         applyRequestDecisions(ctx, res.optJSONArray("requests"))
+        res.optJSONArray("inAppRules")?.let { app.veil.android.screen.InAppRules.save(ctx, it, res.optString("inAppHash")) }
 
         val aiVersion = res.optInt("aiBlocklistVersion", 0)
         if (aiVersion > 0 && aiVersion != store.aiBlocklistVersion) fetchAiBlocklist(ctx, aiVersion)
@@ -326,6 +328,7 @@ object RemoteSync {
 
     private fun releaseLocally(ctx: Context, message: String) {
         AppControl.releaseAll(ctx)
+        app.veil.android.screen.InAppRules.clear(ctx)
         DeviceOwner.release(ctx)
         RemoteStore.get(ctx).clear()
         EventQueue.refresh(ctx)

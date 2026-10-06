@@ -1,3 +1,7 @@
+import { PACKAGE_RE, sanitizeEnabled, sanitizeRules, type InAppRule } from "./inapp.ts";
+
+export { PACKAGE_RE };
+
 /**
  * The settings an admin controls on a paired phone. Mirrors the app's RuleStore
  * one-to-one (see app/src/main/java/app/veil/android/remote/RemoteConfig.kt),
@@ -54,6 +58,8 @@ export interface DeviceConfig {
   };
   lockdown: LockdownPolicy;
   apps: AppPolicy;
+  /** In-app blocking: enabled catalog features (lib/inapp.ts) and the admin's own rules. */
+  inApp: { enabled: string[]; custom: InAppRule[] };
 }
 
 export const APP_MODES = ["off", "blocklist", "allowlist"] as const;
@@ -121,6 +127,7 @@ export function defaultConfig(): DeviceConfig {
       disallowDebugging: false,
     },
     apps: { mode: "off", allowed: [], blocked: [], approveNewApps: false },
+    inApp: { enabled: [], custom: [] },
   };
 }
 
@@ -169,7 +176,6 @@ function words(v: unknown, fallback: string[], minLen: number): string[] {
   return [...out].sort();
 }
 
-export const PACKAGE_RE = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$/;
 
 function packages(v: unknown, fallback: string[], always: string[] = ["app.veil.android"], never: string[] = []): string[] {
   if (!Array.isArray(v)) return fallback;
@@ -245,6 +251,10 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
       disallowAppsControl: bool(l.disallowAppsControl, b.lockdown.disallowAppsControl),
       disallowUnknownSources: bool(l.disallowUnknownSources, b.lockdown.disallowUnknownSources),
       disallowDebugging: bool(l.disallowDebugging, b.lockdown.disallowDebugging),
+    },
+    inApp: {
+      enabled: sanitizeEnabled(p.inApp?.enabled, b.inApp?.enabled ?? []),
+      custom: Array.isArray(p.inApp?.custom) ? sanitizeRules(p.inApp.custom) : (b.inApp?.custom ?? []),
     },
     apps: (() => {
       const allowed = packages(a.allowed, ba.allowed, []);

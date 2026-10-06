@@ -512,7 +512,59 @@ function viewApps(root, data) {
       switchRow("New apps need approval", "Apps installed after this is turned on stay blocked until you allow them. The phone's user can ask for them.", policy.approveNewApps, (v) => patchConfig({ apps: { approveNewApps: v } }))),
     h("section", { class: "card" }, h("div", { class: "spread" }, h("h2", {}, `Apps on the phone (${apps.length})`), h("div", { style: "min-width:200px;flex:1;max-width:320px" }, filter)),
       policy.mode === "off" ? h("p", { class: "muted small" }, "App control is off. Choose a mode above; these switches then say which apps may open.") : null,
-      list));
+      list),
+    inAppSection(data));
+}
+
+/** Catalog switches grouped by app, plus the admin's own rules. */
+function inAppSection(data) {
+  const d = data.device;
+  const inApp = d.config.inApp || { enabled: [], custom: [] };
+  const catalog = data.inAppCatalog || [];
+  const groups = new Map();
+  for (const f of catalog) groups.set(f.appName, [...(groups.get(f.appName) || []), f]);
+  const setEnabled = async (id, on) => {
+    const next = on ? [...new Set([...inApp.enabled, id])] : inApp.enabled.filter((x) => x !== id);
+    await patchConfig({ inApp: { enabled: next } });
+    inApp.enabled = next;
+  };
+  const features = h("section", { class: "card" }, h("h2", {}, "Block parts of apps"),
+    h("p", { class: "muted small" }, "Keep an app working but switch off its risky parts. Needs VEIL's screen filter (accessibility) on the phone. Rules are kept up to date from this server, so they keep working when apps change."),
+    [...groups].map(([appName, list]) => h("div", { style: "margin-top:12px" }, h("h3", {}, appName),
+      list.map((f) => switchRow(f.name, f.description, inApp.enabled.includes(f.id), (v) => setEnabled(f.id, v))))));
+
+  const custom = [...inApp.custom];
+  const listBox = h("ul", { class: "list" });
+  const describe = (r) => {
+    const m = r.match;
+    const what = m.viewId ? `view id contains “${m.viewId}”` : m.text ? `text is “${m.text}”` : `description contains “${m.desc}”`;
+    return `${r.app}: ${r.action === "leave" ? "leave screens where" : "cover elements where"} ${what}${m.selected ? " (when selected)" : ""}`;
+  };
+  // Show what the server accepted (it drops malformed rules), not what was typed.
+  const save = async (next) => {
+    await patchConfig({ inApp: { custom: next } });
+    custom.splice(0, custom.length, ...(state.device.device.config.inApp?.custom || []));
+    drawCustom();
+  };
+  const drawCustom = () => fill(listBox, custom.length ? custom.map((r, i) => h("li", { class: "spread" }, h("span", { class: "small", style: "overflow-wrap:anywhere" }, describe(r)),
+    button("Remove", async () => save(custom.filter((_, j) => j !== i)), "ghost small"))) : h("li", { class: "muted small" }, "No custom rules."));
+  drawCustom();
+  const appIn = h("input", { type: "text", placeholder: "com.example.app", "aria-label": "App package" });
+  const kind = h("select", { "aria-label": "Match" }, [["viewId", "View id contains"], ["text", "Text is"], ["desc", "Description contains"]].map(([v, l]) => h("option", { value: v }, l)));
+  const value = h("input", { type: "text", placeholder: "e.g. reel_player", "aria-label": "Match value" });
+  const action = h("select", { "aria-label": "Action" }, [["cover", "Cover it"], ["leave", "Leave the screen"]].map(([v, l]) => h("option", { value: v }, l)));
+  const customCard = h("section", { class: "card stack" }, h("h2", {}, "Custom rules"),
+    h("p", { class: "muted small" }, "For apps not in the list above. The phone matches these against what's on screen in that app. Ask the assistant if you're not sure what to enter."),
+    listBox,
+    h("div", { class: "grid", style: "grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px" }, appIn, kind, value, action),
+    button("Add rule", async () => {
+      const r = { app: appIn.value.trim(), match: { [kind.value]: value.value.trim() }, action: action.value };
+      const before = custom.length;
+      await save([...custom, r]);
+      if (custom.length === before) toast("That rule wasn't accepted: check the package name and use at least 3 characters to match.");
+      else { value.value = ""; }
+    }, "secondary"));
+  return [features, customCard];
 }
 
 // ---------------- activity

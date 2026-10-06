@@ -109,15 +109,41 @@ class VeilAccessibilityService : AccessibilityService() {
         mainHandler.postDelayed({ BlockedAppActivity.show(this, pkg) }, 250)
     }
 
+    @Volatile private var lastLeaveAt = 0L
+
     private fun doScan() {
-        if (!store.screenProtectionWanted || !store.textEnabled || !screenOn) { clearOverlay(); return }
-        val pkg = currentPackage
-        if (pkg != null && pkg in store.safeListApps) { clearOverlay(); return }
-        val eng = engine ?: return
+        if (!screenOn) { clearOverlay(); return }
+        // Nothing to do for this app: don't even read the screen (saves battery).
+        val cp = currentPackage
+        if (!(store.screenProtectionWanted && store.textEnabled) && (cp == null || InAppRules.forApp(this, cp).isEmpty())) { clearOverlay(); return }
         val root = try { rootInActiveWindow } catch (_: Throwable) { null } ?: run { clearOverlay(); return }
+        val pkg = root.packageName?.toString() ?: currentPackage
+        val covers = ArrayList<Cover>()
+
+        // In-app blocking runs whether or not the word filter is on: it's the admin's rule.
+        if (pkg != null && pkg != packageName) {
+            val rules = InAppRules.forApp(this, pkg)
+            if (rules.isNotEmpty()) {
+                val r = InAppRules.evaluate(root, rules)
+                for (rect in r.covers) covers.add(Cover(rect, TextAction.BAR))
+                val now = System.currentTimeMillis()
+                if (r.leave && now - lastLeaveAt > 1500) {
+                    lastLeaveAt = now
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    mainHandler.post { android.widget.Toast.makeText(this, "This part of the app is blocked", android.widget.Toast.LENGTH_SHORT).show() }
+                }
+            }
+        }
+
+        val textOn = store.screenProtectionWanted && store.textEnabled && (pkg == null || pkg !in store.safeListApps)
+        val eng = engine
+        if (!textOn || eng == null) {
+            val finalCovers = dedupe(covers)
+            mainHandler.post { overlay.update(finalCovers) }
+            return
+        }
 
         val texts = ScreenTextScanner.scan(root)
-        val covers = ArrayList<Cover>()
         var count = 0
         for (t in texts) {
             if (t.isPassword) continue // never scan, cover, or log password fields
