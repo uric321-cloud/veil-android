@@ -132,7 +132,7 @@ export function defaultConfig(): DeviceConfig {
       allowWords: [],
       safeListApps: [...DEFAULT_SAFELIST],
       images: true,
-      imageStrictness: "medium",
+      imageStrictness: "high",   // covers explicit and suggestive images on a managed phone
     },
     lockdown: {
       blockUninstall: true,
@@ -147,7 +147,10 @@ export function defaultConfig(): DeviceConfig {
       disallowUnknownSources: false,
       disallowDebugging: false,
     },
-    apps: { mode: "off", allowed: [], blocked: [], approveNewApps: false },
+    // Managed phones are allow-list by default: only apps the admin (or the AI)
+    // has approved can open. On the first check-in the AI classifies everything
+    // installed and approves the safe apps automatically.
+    apps: { mode: "allowlist", allowed: [], blocked: [], approveNewApps: true },
     inApp: { enabled: [], custom: [] },
   };
 }
@@ -233,8 +236,9 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
   const l = (p.lockdown && typeof p.lockdown === "object" ? p.lockdown : {}) as Record<string, any>;
   const a = (p.apps && typeof p.apps === "object" ? p.apps : {}) as Record<string, any>;
   const b = base;
-  // Devices paired before app control existed have no apps policy stored yet.
-  const ba = b.apps ?? defaultConfig().apps;
+  // Devices paired before app control existed have no apps policy stored yet;
+  // keep them "off" (don't suddenly lock an existing phone down to allow-list).
+  const ba = b.apps ?? { mode: "off" as const, allowed: [], blocked: [], approveNewApps: false };
   return {
     adultList: bool(p.adultList, b.adultList),
     keywordsEnabled: bool(p.keywordsEnabled, b.keywordsEnabled),

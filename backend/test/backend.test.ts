@@ -53,6 +53,17 @@ describe("config", () => {
     assert.equal(normalizeHost("bad host.com"), null);
   });
 
+  it("new (managed) devices default to allow-list apps and high image strictness", () => {
+    const c = defaultConfig();
+    assert.equal(c.apps.mode, "allowlist");
+    assert.equal(c.apps.approveNewApps, true);
+    assert.equal(c.screen.imageStrictness, "high");
+    // but an existing phone with no apps policy stays "off", not suddenly locked down
+    const legacy = defaultConfig() as any;
+    delete legacy.apps;
+    assert.equal(sanitizeConfig({ youtubeStrict: true }, legacy).apps.mode, "off");
+  });
+
   it("drops malformed values and unknown keys, and never lets uninstall blocking be turned off", () => {
     const c = sanitizeConfig({
       customBlock: ["Example.com", "not a host", "https://bad.example/x"],

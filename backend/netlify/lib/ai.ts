@@ -2,8 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeConfig } from "./config.ts";
 import {
   appendChat, decideRequest, finishJob, getChat, getClassification, getRequest, getSummary, listEvents, listRequests,
-  ownedDevice, saveClassifications, saveRequest, saveSummary, type AiReview, type Classification,
-  type Device, type DeviceEvent, type Job, type Summary, type UnblockRequest,
+  ownedDevice, recordAppClassification, saveClassifications, saveRequest, saveSummary, type AiReview, type AppDecision,
+  type Classification, type Device, type DeviceEvent, type Job, type Summary, type UnblockRequest,
 } from "./model.ts";
 import { kv } from "./store.ts";
 
@@ -178,6 +178,55 @@ export async function classifyDomains(domains: string[]): Promise<Classification
         allow: AUTO_ALLOW.has(r.category) && confidence >= AUTO_ALLOW_CONFIDENCE,
         at: now,
       });
+    }
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ app classification
+
+const APP_CLASSIFY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["results"],
+  properties: {
+    results: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["package", "decision", "category", "reason"],
+        properties: {
+          package: { type: "string" },
+          decision: { type: "string", enum: ["allow", "block", "ask"] },
+          category: { type: "string", description: "What the app is, in a few words." },
+          reason: { type: "string", description: "A short reason." },
+        },
+      },
+    },
+  },
+};
+
+export async function classifyApps(apps: { package: string; label: string }[]): Promise<AppDecision[]> {
+  const out: AppDecision[] = [];
+  for (let i = 0; i < apps.length; i += 40) {
+    const batch = apps.slice(i, i + 40);
+    const res = await ask<{ results: AppDecision[] }>(
+      "You decide which Android apps may run on a filtered accountability/family phone. For each app return a decision: " +
+        "\"allow\" for apps that are clearly fine (phone, messages, contacts, clock, calculator, camera, calendar, notes, " +
+        "weather, banking, payments, navigation/maps, email, authenticators, utilities, settings, keyboards, work and school " +
+        "apps); \"block\" for apps whose main purpose is adult content, dating/hookup, gambling, unfiltered web browsing, " +
+        "social feeds or short-video, app stores or sideloading, or VPN/proxy/anonymising; \"ask\" when you are genuinely " +
+        "unsure or it could go either way. Judge by the package name and label. Return one result per app, same package string.",
+      `Classify each app (package — label):\n${batch.map((a) => `${a.package} — ${a.label}`).join("\n")}`,
+      APP_CLASSIFY_SCHEMA,
+      "low",
+    );
+    const known = new Set(batch.map((a) => a.package));
+    for (const r of res.results) {
+      if (!known.has(r.package)) continue;
+      const decision = r.decision === "allow" || r.decision === "block" ? r.decision : "ask";
+      out.push({ package: r.package, decision, category: String(r.category ?? "").slice(0, 60), reason: String(r.reason ?? "").slice(0, 200) });
     }
   }
   return out;
@@ -368,6 +417,13 @@ export async function runJob(job: Job): Promise<void> {
         const results = await classifyDomains(domains);
         await saveClassifications(results);
         await finishJob(job, { classified: results.length, blocked: results.filter((c) => c.block).map((c) => c.domain) });
+        break;
+      }
+      case "classify_apps": {
+        const { deviceId, apps } = job.payload as { deviceId: string; apps: { package: string; label: string }[] };
+        const results = await classifyApps((apps ?? []).slice(0, 200));
+        const counts = await recordAppClassification(deviceId, results);
+        await finishJob(job, counts);
         break;
       }
       case "summary": {

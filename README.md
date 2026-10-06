@@ -69,6 +69,14 @@ number of phones.
   "new apps need approval". Device Owner phones suspend blocked apps; others close
   them through the accessibility service. Essentials (launcher, phone, SMS,
   keyboard, Settings, VEIL) are never blocked. Users can ask for an app.
+  - **Managed phones default to allow-list** (only approved apps run) with high
+    image strictness. On the first check-in the phone sends its app list and the
+    AI classifies every app: safe ones are approved automatically, unsafe ones
+    stay blocked, and unsure ones become pending "approve this app?" requests for
+    the admin. New apps installed later are scanned the same way. Phones paired
+    before app control existed stay "off" until the admin turns it on.
+  - Each phone has a stable **Client ID** (`dev_…`), shown on the dashboard and
+    searchable, so a client can be looked up by ID.
 - **In-app blocking**: switch off WhatsApp Status/Channels and profile photos,
   YouTube Shorts/search/comments, Instagram Reels/Explore, Maps photos, the Google
   Discover feed and more, or add custom rules. Rules live in

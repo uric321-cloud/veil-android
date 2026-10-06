@@ -67,6 +67,7 @@ const routes: [string, RegExp, Handler][] = [
     const result = await syncDevice(device, await readJson(req));
     for (const rid of result.reviewRequestIds) await kick(req, await createJob("review", { deviceId: device.id, requestId: rid }));
     if (result.classifyDomains.length) await kick(req, await createJob("classify", { domains: result.classifyDomains }));
+    if (result.classifyApps.length) await kick(req, await createJob("classify_apps", { deviceId: device.id, apps: result.classifyApps }));
     return json(result.response);
   }],
   ["GET", /^\/api\/device\/ai-blocklist$/, async (req) => {
