@@ -13,8 +13,8 @@ android {
         applicationId = "app.veil.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.4.2"
+        versionCode = 16
+        versionName = "0.4.3"
 
         // The admin server phones pair with unless told otherwise (pairing links carry their own).
         buildConfigField("String", "DEFAULT_SERVER", "\"https://veil-admin.netlify.app\"")
@@ -66,9 +66,13 @@ kotlin {
     }
 }
 
-// One third-party dependency, on purpose kept to this: the TensorFlow Lite
-// runtime for the on-device image model (Stage 4). Everything else is the
-// Android framework and the Kotlin stdlib.
+// Third-party dependencies, kept deliberately small:
+//  - TensorFlow Lite: the on-device explicit-image model (Stage 4).
+//  - ML Kit face detection (bundled model, no Google Play Services, nothing
+//    leaves the phone): the "blur every person" layer, which covers people
+//    regardless of clothing — reliable where the explicit-image model, tuned for
+//    bare skin, treats lingerie/swimwear as "clothed".
 dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("com.google.mlkit:face-detection:16.1.7")
 }

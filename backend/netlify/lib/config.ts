@@ -76,6 +76,8 @@ export interface DeviceConfig {
     /** Stage 4: cover explicit images on screen (on-device model, Android 11+). */
     images: boolean;
     imageStrictness: (typeof IMAGE_STRICTNESS)[number];
+    /** Blur every person on screen (face -> head-to-body cover), whatever they wear. */
+    blurPeople: boolean;
     notifications: boolean;
   };
   lockdown: LockdownPolicy;
@@ -154,6 +156,7 @@ export function defaultConfig(): DeviceConfig {
       safeListApps: [...DEFAULT_SAFELIST],
       images: true,
       imageStrictness: "max",    // fail-closed: cover anything not clearly safe on a managed phone
+      blurPeople: true,          // blur every person on screen, whatever they wear (strongest posture)
       notifications: true,       // cancel incoming notifications that contain blocked words
     },
     lockdown: {
@@ -308,6 +311,7 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
       safeListApps: packages(s.safeListApps, b.screen.safeListApps),
       images: bool(s.images, b.screen.images ?? true),
       imageStrictness: oneOf(s.imageStrictness, IMAGE_STRICTNESS, b.screen.imageStrictness ?? "medium"),
+      blurPeople: bool(s.blurPeople, b.screen.blurPeople ?? true),
       notifications: bool(s.notifications, b.screen.notifications ?? true),
     },
     lockdown: {

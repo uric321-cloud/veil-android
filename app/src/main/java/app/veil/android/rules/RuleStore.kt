@@ -215,6 +215,17 @@ class RuleStore private constructor(context: Context) {
         get() = prefs.getString(K_IMAGE_STRICT, "medium") ?: "medium"
         set(v) = prefs.edit().putString(K_IMAGE_STRICT, v).apply()
 
+    /**
+     * Blur every person on screen: when a face is detected, cover the person from
+     * the head down over the body, whatever they are wearing. The strongest
+     * posture (and the reliable one for lingerie/swimwear, which the explicit-image
+     * model treats as "clothed"); it also covers ordinary photos of people. On by
+     * default wherever image filtering is on.
+     */
+    var blurPeople: Boolean
+        get() = prefs.getBoolean(K_BLUR_PEOPLE, true)
+        set(v) = prefs.edit().putBoolean(K_BLUR_PEOPLE, v).apply()
+
     /** Cancel incoming notifications whose text contains blocked words. */
     var notificationFilter: Boolean
         get() = prefs.getBoolean(K_NOTIF_ON, true)
@@ -429,6 +440,7 @@ class RuleStore private constructor(context: Context) {
         const val K_CATALOG_VER = "catalog_version"
         const val K_CATALOG = "catalog_rules"
         const val K_IMAGE_STRICT = "image_strictness"
+        const val K_BLUR_PEOPLE = "blur_people"
         const val K_IMAGE_TOTAL = "images_covered_total"
 
         /** Keys whose change means the DNS matcher must be rebuilt. */

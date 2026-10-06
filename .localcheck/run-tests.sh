@@ -13,7 +13,7 @@ KOTLIN_VERSION=2.1.21   # keep in step with the Kotlin plugin in build.gradle.kt
 OUT=$ROOT/.localcheck/testout
 J=$ROOT/app/src/main/java/app/veil/android
 
-TESTS=(Engine TextEngine InApp Image Url Schedule Catalog)
+TESTS=(Engine TextEngine InApp Image Url Schedule Catalog Person)
 [ "${1:-}" = "--live" ] && TESTS+=(Upstream)
 
 # Sources each test compiles against, besides the test file itself.
@@ -26,6 +26,7 @@ sources() {
         Url) echo "$J/screen/UrlVerdict.kt" ;;
         Schedule) echo "$J/rules/Schedule.kt" ;;
         Catalog) echo "$J/screen/UrlVerdict.kt $J/screen/CatalogVerdict.kt" ;;
+        Person) echo "$J/screen/PersonCover.kt" ;;
         Upstream) echo "$J/dns/DnsMessage.kt $J/dns/Upstream.kt $J/VeilLog.kt" ;;
     esac
 }
