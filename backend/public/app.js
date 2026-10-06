@@ -458,7 +458,7 @@ function viewRequests(root, data) {
     route();
   };
   const pendingList = pending.length ? h("ul", { class: "list" }, pending.map((r) => h("li", { class: "stack" },
-    h("div", { class: "spread" }, requestTitle(r), h("span", { class: "muted small" }, when(r.createdAt))),
+    h("div", { class: "spread" }, requestTitle(r), h("span", { class: "row" }, r.escalated ? pill("warn", "AI unsure — needs you") : null, h("span", { class: "muted small" }, when(r.createdAt)))),
     h("div", {}, h("span", { class: "muted" }, "Reason: "), r.reason || h("em", { class: "muted" }, "none given")),
     aiBox(r),
     r.kind === "app"
@@ -474,7 +474,10 @@ function viewRequests(root, data) {
     h("section", { class: "card" }, h("h2", {}, "Waiting for you"), pendingList),
     h("section", { class: "card" }, h("h2", {}, "Earlier"), done.length ? h("ul", { class: "list" }, done.map((r) => h("li", { class: "spread" },
       h("div", {}, requestTitle(r), h("div", { class: "muted small" }, r.reason || "")),
-      h("div", { class: "row" }, r.autoApproved ? pill("neutral", "Auto-approved by AI") : null, r.status === "approved" ? pill("good", r.until === 0 ? "Always allowed" : r.until > Date.now() ? `Allowed until ${new Date(r.until).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : "Allowance ended") : pill("neutral", "Denied"))))) : h("p", { class: "muted" }, "No earlier requests.")));
+      h("div", { class: "row" },
+        r.autoApproved ? pill("neutral", "AI approved") : null,
+        r.autoDenied ? pill("neutral", "AI blocked") : null,
+        r.status === "approved" ? pill("good", r.until === 0 ? "Always allowed" : r.until > Date.now() ? `Allowed until ${new Date(r.until).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : "Allowance ended") : pill("neutral", "Denied"))))) : h("p", { class: "muted" }, "No earlier requests.")));
 }
 
 function requestTitle(r) {
@@ -668,7 +671,17 @@ function viewFiltering(root, data) {
         }, "secondary small")))),
     switchRow("Allowed sites only", "Only sites on the Always allow list, temporary allows and the phone's essential services load.", c.webMode === "allowlist", (v) => patchConfig({ webMode: v ? "allowlist" : "filter", level: "custom" })),
     switchRow("Let AI allow clearly safe sites", "In allowed-sites-only mode, sites the AI is confident are education, government, banking, health or app infrastructure open without asking. Never social media, video, news or shopping.", c.aiAutoAllowSafe !== false, set("aiAutoAllowSafe")),
-    switchRow("Approve low-risk requests automatically", "When the AI reviews an unblock request as low-risk, it's approved straight away (the phone gets it within a minute). Anything else still waits for you.", c.aiAutoApprove === "low_risk", (v) => patchConfig({ aiAutoApprove: v ? "low_risk" : "off" })));
+    (() => {
+      const mode = c.aiAutoApprove || "off";
+      const choose = (m) => h("label", { class: "switch-row", style: "cursor:pointer" },
+        h("div", { class: "text" }, h("strong", {}, m.title), h("p", {}, m.desc)),
+        h("input", { type: "radio", name: "aimode", checked: mode === m.id, onchange: () => patchConfig({ aiAutoApprove: m.id }).catch((e) => toast(e.message)) }));
+      return h("section", { class: "card" }, h("h2", {}, "How requests are handled"),
+        h("p", { class: "muted small" }, "When the phone's user asks to open a blocked site or app, the AI reviews it first. Choose how much it may decide on its own."),
+        choose({ id: "ai_decides", title: "AI decides, ask me only when unsure", desc: "The AI allows clearly-safe requests and blocks clearly-unsafe ones on its own. Only genuinely borderline ones wait for you. You can see and change every decision." }),
+        choose({ id: "low_risk", title: "AI allows clearly-safe only", desc: "The AI allows requests it rates clearly safe; everything else waits for you to decide." }),
+        choose({ id: "off", title: "I decide everything", desc: "Every request waits for you. The AI still shows its recommendation." }));
+    })());
   add(root, levelCard, 
     h("section", { class: "card" }, h("h2", {}, "Web filter"),
       switchRow("Adult content list", "Blocks hundreds of thousands of known adult sites.", c.adultList, set("adultList")),

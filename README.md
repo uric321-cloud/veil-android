@@ -24,10 +24,16 @@ described below.
 dashboard and the API phones check in with. One admin account manages any
 number of phones.
 
-- **Pairing.** The admin clicks *Add a phone* and gets a single-use code (30
-  minutes). Either set up a factory-reset phone with the QR code (full
-  lockdown, below) or enter the server and code under *Settings → Pair with an
-  admin* on a phone that already has VEIL.
+- **Install and pair (no erase).** VEIL installs like any app and is paired
+  afterwards — no factory reset. The admin clicks *Add a phone* for a single-use
+  code (30 minutes) and sends the pairing link (`/p/CODE`) to the phone; opening
+  it launches VEIL with the server and code filled in. This is the normal way to
+  set up a client's existing phone. Device Owner (below) is an optional extra for
+  an un-removable install.
+- **Alert on removal.** On a normal (non-Device-Owner) install the user can still
+  uninstall VEIL. A scheduled check (`watch-devices`, every 15 min) raises a
+  *phone went silent* alert when a phone that was checking in stops, so the admin
+  knows if VEIL was removed or the phone was turned off.
 - **Check-ins.** About once a minute the phone sends its status, what VEIL
   blocked, tamper alerts and unblock requests, and receives settings changes,
   request decisions, commands and the shared AI blocklist. A paired phone's
@@ -70,8 +76,12 @@ number of phones.
   fixed when an app changes without shipping a new APK.
 - **Filter levels**: Open, Standard, Strict, Allowed sites only. In allowed-sites-
   only mode, sites the AI is confident are education, government, banking,
-  health or app infrastructure open on their own; low-risk requests can be
-  auto-approved.
+  health or app infrastructure open on their own.
+- **AI request handling** (Web filter tab → *How requests are handled*). Default
+  *AI decides, ask me only when unsure*: the AI allows clearly-safe requests and
+  blocks clearly-unsafe ones on its own (within ~20s), and escalates to the admin
+  only when it sets `needsHuman`. Other modes: *AI allows clearly-safe only*, or
+  *I decide everything*. Every AI decision is shown and can be overridden.
 - **Image filtering** (Android 11+): an on-device MobileNetV2 model (from nsfwjs,
   MIT, see `app/src/main/assets/models/NOTICE.txt`) checks image areas in
   accessibility screenshots and covers explicit ones. Nothing leaves the phone.

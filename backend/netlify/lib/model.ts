@@ -60,6 +60,8 @@ export interface Device {
   commands: Command[];
   alerts: Alert[];
   state: "active" | "releasing" | "released";
+  /** Set when we alerted the admin that this phone went silent; cleared on next check-in. */
+  silentAlerted?: boolean;
   /** Launchable apps on the phone, for the admin's Apps tab. Sent only when it changes. */
   apps?: InstalledApp[];
 }
@@ -87,6 +89,8 @@ export interface AiReview {
   category: string;
   risk: "low" | "medium" | "high";
   explanation: string;
+  /** The model is genuinely unsure and wants a person to decide. */
+  needsHuman?: boolean;
 }
 
 export interface UnblockRequest {
@@ -105,6 +109,9 @@ export interface UnblockRequest {
   note?: string;
   ai?: AiReview;
   autoApproved?: boolean;
+  autoDenied?: boolean;
+  /** AI handled it but sent it to a human because it was unsure. */
+  escalated?: boolean;
 }
 
 export interface Classification {
@@ -368,6 +375,7 @@ const TAMPER_LABELS: Record<string, string> = {
 export async function syncDevice(device: Device, input: SyncInput): Promise<SyncResult> {
   const now = Date.now();
   device.lastSeen = now;
+  device.silentAlerted = false;
   device.appVersion = str(input.appVersion, 40) || device.appVersion;
   if (input.status) device.status = sanitizeStatus(input.status);
   if (typeof input.appliedConfigVersion === "number") device.appliedConfigVersion = input.appliedConfigVersion;
@@ -508,6 +516,11 @@ export async function ownedDevice(adminId: string, deviceId: string): Promise<De
   const d = await kv().get<Device>(K.device(deviceId));
   if (!d || d.adminId !== adminId || d.state === "released") throw new HttpError(404, "Device not found");
   return d;
+}
+
+/** Fetch a device by id with no owner check. For tests and internal jobs only. */
+export async function getDeviceForTest(deviceId: string): Promise<Device | null> {
+  return kv().get<Device>(K.device(deviceId));
 }
 
 export async function saveDevice(d: Device): Promise<void> {
@@ -672,6 +685,33 @@ export async function allActiveDevices(): Promise<Device[]> {
     if (d && d.state === "active") out.push(d);
   }
   return out;
+}
+
+/**
+ * Raises one "phone went silent" alert per device that was checking in and then
+ * stopped — the signal that VEIL was uninstalled, turned off, or the phone was
+ * powered down. A phone checks in about once a minute, so a gap well past that
+ * means it is no longer reporting. The alert is raised once (silentAlerted) and
+ * cleared on the next check-in (syncDevice). Returns the number newly alerted.
+ */
+export async function checkSilentDevices(now = Date.now()): Promise<number> {
+  const SILENT_AFTER = 15 * 60_000;   // not heard from in 15 min
+  const GIVE_UP_AFTER = 7 * DAY;      // stop alerting about long-gone phones
+  let raised = 0;
+  for (const d of await allActiveDevices()) {
+    const gap = now - d.lastSeen;
+    if (d.silentAlerted || gap < SILENT_AFTER || gap > GIVE_UP_AFTER) continue;
+    d.alerts.unshift({
+      type: "device_silent",
+      at: now,
+      detail: "This phone stopped checking in. VEIL may have been uninstalled or turned off, or the phone is off or out of coverage.",
+    });
+    d.alerts = d.alerts.slice(0, MAX_ALERTS);
+    d.silentAlerted = true;
+    await kv().set(K.device(d.id), d);
+    raised++;
+  }
+  return raised;
 }
 
 /** Shared secret between the API and the background worker, created on first use. */
