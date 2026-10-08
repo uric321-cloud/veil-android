@@ -408,6 +408,8 @@ const TAMPER_LABELS: Record<string, string> = {
   recovery_failed: "Wrong recovery code entered on the phone",
   recovery_used: "Recovery code used on the phone: lockdown released",
   not_device_owner: "VEIL is not Device Owner: lockdown is not active",
+  battery_optimization: "Battery optimization was re-enabled for VEIL — Android can now kill it in the background",
+  other_vpn: "Another VPN app is active and may be bypassing VEIL's filtering",
 };
 
 export async function syncDevice(device: Device, input: SyncInput): Promise<SyncResult> {

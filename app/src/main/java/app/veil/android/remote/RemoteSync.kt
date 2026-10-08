@@ -5,7 +5,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import app.veil.android.BuildConfig
 import app.veil.android.R
@@ -256,6 +259,8 @@ object RemoteSync {
             .put("overlayAllowed", Settings.canDrawOverlays(ctx))
             .put("deviceOwner", DeviceOwner.isOwner(ctx))
             .put("privateDns", s.privateDnsHost)
+            .put("batteryExempt", batteryExempt(ctx))
+            .put("otherVpnActive", otherVpnActive(ctx))
             .put("blockedToday", s.blockedToday)
             .put("blockedTotal", s.blockedTotal)
             .put("textCoveredTotal", s.textCoveredTotal)
@@ -269,6 +274,24 @@ object RemoteSync {
         val expected = "${ctx.packageName}/${VeilAccessibilityService::class.java.name}"
         val flat = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         return flat.split(':').any { it.equals(expected, ignoreCase = true) }
+    }
+
+    /** True when VEIL is exempt from battery optimization (so Android won't kill it). */
+    private fun batteryExempt(ctx: Context): Boolean = try {
+        (ctx.getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(ctx.packageName)
+    } catch (_: Throwable) { true }
+
+    /**
+     * True when some OTHER app holds an active VPN - a classic bypass, since only
+     * one app owns Android's VPN slot, so a second VPN app displaces VEIL's filter.
+     * If VEIL's own VPN is running, the VPN transport is ours, not "other".
+     */
+    private fun otherVpnActive(ctx: Context): Boolean {
+        if (VeilVpnService.isRunning) return false
+        return try {
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.allNetworks.any { n -> cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }
+        } catch (_: Throwable) { false }
     }
 
     /**
@@ -287,6 +310,8 @@ object RemoteSync {
             if (!st.optBoolean("overlayAllowed")) problems.add("it can't cover the screen")
         }
         if (st.optString("privateDns").isNotEmpty()) problems.add("Private DNS is bypassing it")
+        if (st.optBoolean("otherVpnActive")) problems.add("another VPN app is bypassing it")
+        if (!st.optBoolean("batteryExempt", true)) problems.add("battery saver can stop it")
         if (problems.isEmpty()) { nm.cancel(NOTIF_PROTECTION); return }
         val text = "Protection is not fully on: " + problems.joinToString(", ") + ". Tap to fix."
         try {
@@ -317,6 +342,8 @@ object RemoteSync {
         if (turnedOff("accessibilityOn")) EventQueue.tamper("accessibility_off")
         if (turnedOff("overlayAllowed")) EventQueue.tamper("overlay_off")
         if (turnedOff("deviceOwner")) EventQueue.tamper("not_device_owner")
+        if (turnedOff("batteryExempt") && now.optBoolean("protection")) EventQueue.tamper("battery_optimization")
+        if (!was.optBoolean("otherVpnActive") && now.optBoolean("otherVpnActive") && now.optBoolean("protection")) EventQueue.tamper("other_vpn")
         val dns = now.optString("privateDns")
         if (dns.isNotEmpty() && dns != was.optString("privateDns")) EventQueue.tamper("private_dns", dns)
     }
