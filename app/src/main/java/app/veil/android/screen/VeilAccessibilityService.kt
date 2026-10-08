@@ -269,6 +269,9 @@ class VeilAccessibilityService : AccessibilityService() {
         val minSide = (dp * (if (failClosed) 40 else 72)).toInt()
         val maxRegions = if (failClosed) 20 else 12
         val regions = ImageScanner.regions(root, minSide, maxRegions)
+        // Tell the person-blur which on-screen areas are video surfaces, so a face
+        // inside a moving video covers the whole surface (VideoCover).
+        if (blurPeople) people?.videoSurfaces = regions.filter { it.dynamic }.map { it.rect }
         // One screenshot drives both layers: the image classifier and, via faceSink,
         // the person-blur. faceSink runs even when there are no image regions.
         val faceSink: ((android.graphics.Bitmap) -> Unit)? = if (blurPeople) { bmp -> people?.process(bmp) ?: bmp.recycle() } else null
