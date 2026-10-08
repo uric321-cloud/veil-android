@@ -57,6 +57,7 @@ object RemoteConfig {
             bool(sc, "images") { if (s.imageFilter != it) s.imageFilter = it }
             str(sc, "imageStrictness", setOf("low", "medium", "high", "max")) { if (s.imageStrictness != it) s.imageStrictness = it }
             bool(sc, "blurPeople") { if (s.blurPeople != it) s.blurPeople = it }
+            bool(sc, "riskDetection") { if (s.riskDetection != it) s.riskDetection = it }
             bool(sc, "notifications") { if (s.notificationFilter != it) s.notificationFilter = it }
             strings(sc, "blockWords") { if (s.textBlockWords != it) s.textBlockWords = it }
             strings(sc, "allowWords") { if (s.textAllowWords != it) s.textAllowWords = it }

@@ -78,6 +78,8 @@ export interface DeviceConfig {
     imageStrictness: (typeof IMAGE_STRICTNESS)[number];
     /** Blur every person on screen (face -> head-to-body cover), whatever they wear. */
     blurPeople: boolean;
+    /** Watch on-screen text for grooming/sextortion/self-harm/bullying (category-only alerts). */
+    riskDetection: boolean;
     notifications: boolean;
   };
   lockdown: LockdownPolicy;
@@ -157,6 +159,7 @@ export function defaultConfig(): DeviceConfig {
       images: true,
       imageStrictness: "max",    // fail-closed: cover anything not clearly safe on a managed phone
       blurPeople: true,          // blur every person on screen, whatever they wear (strongest posture)
+      riskDetection: true,       // content-free grooming/sextortion/self-harm/bullying alerts
       notifications: true,       // cancel incoming notifications that contain blocked words
     },
     lockdown: {
@@ -312,6 +315,7 @@ export function sanitizeConfig(patch: unknown, base: DeviceConfig = defaultConfi
       images: bool(s.images, b.screen.images ?? true),
       imageStrictness: oneOf(s.imageStrictness, IMAGE_STRICTNESS, b.screen.imageStrictness ?? "medium"),
       blurPeople: bool(s.blurPeople, b.screen.blurPeople ?? true),
+      riskDetection: bool(s.riskDetection, b.screen.riskDetection ?? true),
       notifications: bool(s.notifications, b.screen.notifications ?? true),
     },
     lockdown: {

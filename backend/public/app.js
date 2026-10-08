@@ -516,7 +516,7 @@ function viewOverview(root, data) {
   const alerts = h("section", { class: "card" },
     h("div", { class: "spread" }, h("h2", {}, "Alerts"), d.alerts.length ? button("Clear", async () => { await api("POST", `/api/devices/${d.id}/alerts/clear`); route(); }, "ghost small") : null),
     d.alerts.length ? h("ul", { class: "list" }, d.alerts.slice(0, 20).map((a) => h("li", {}, h("strong", {}, a.detail), h("div", { class: "muted small" }, when(a.at)))))
-      : h("p", { class: "muted" }, "No tamper alerts."));
+      : h("p", { class: "muted" }, "No alerts. Tamper, bypass and safety-risk alerts appear here."));
 
   const status = h("section", { class: "card" }, h("h2", {}, "Status"),
     h("dl", { class: "kv" },

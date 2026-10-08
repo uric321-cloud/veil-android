@@ -220,19 +220,24 @@ class VeilAccessibilityService : AccessibilityService() {
 
         val safe = pkg != null && pkg in store.safeListApps
         val textOn = store.screenProtectionWanted && store.textEnabled && !safe
+        val riskOn = store.screenProtectionWanted && store.riskDetection && !safe
         val eng = engine
         // The image scan also drives the person-blur layer (one shared screenshot).
         if ((imagesWanted || peopleWanted) && !safe) scanImages(root, blurPeople = peopleWanted)
         else if (personCovers.isNotEmpty()) personCovers = emptyList()
-        if (!textOn || eng == null) {
+        if ((!textOn || eng == null) && !riskOn) {
             publish(covers)
             return
         }
 
         val texts = ScreenTextScanner.scan(root)
         var count = 0
+        val riskCats = HashSet<String>()
         for (t in texts) {
             if (t.isPassword) continue // never scan, cover, or log password fields
+            // Risk detection: category only, text is never kept or sent.
+            if (riskOn) riskCats.addAll(RiskClassifier.categories(t.text))
+            if (!textOn || eng == null) continue
             val reds = eng.scan(t.text)
             if (reds.isEmpty()) continue
             for (r in reds) {
@@ -242,7 +247,19 @@ class VeilAccessibilityService : AccessibilityService() {
             }
         }
         if (count > 0) store.countTextCovered(count)
+        if (riskCats.isNotEmpty()) reportRisk(riskCats)
         publish(covers)
+    }
+
+    /** Per-category rate limit so a risk category alerts the admin at most once every few minutes. */
+    private val lastRiskAt = HashMap<String, Long>()
+    private fun reportRisk(cats: Set<String>) {
+        val now = System.currentTimeMillis()
+        for (c in cats) {
+            if (now - (lastRiskAt[c] ?: 0L) < RISK_COOLDOWN_MS) continue
+            lastRiskAt[c] = now
+            app.veil.android.remote.EventQueue.risk(c)
+        }
     }
 
     /** The last cover set sent to the overlay, so we never redraw an unchanged screen. */
@@ -345,5 +362,7 @@ class VeilAccessibilityService : AccessibilityService() {
         private const val DEBOUNCE_MS = 150L
         /** Re-scan cadence for a playing video when no accessibility events arrive. */
         private const val VIDEO_RESAMPLE_MS = 1100L
+        /** Per-category cooldown between risk alerts, so one conversation alerts once. */
+        private const val RISK_COOLDOWN_MS = 5 * 60_000L
     }
 }
