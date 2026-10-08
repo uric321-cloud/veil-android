@@ -39,13 +39,18 @@ class PersonScanner(private val onCovers: (List<Rect>) -> Unit) {
     private val seen = ArrayList<Box>()
     @Volatile private var lastScreen = Box(0, 0, 0, 0)
 
+    /** Video surface rects on screen this frame (from accessibility nodes), set by
+     *  the service before each scan. A face inside one covers the whole surface. */
+    @Volatile var videoSurfaces: List<Rect> = emptyList()
+    private val flaggedVideos = ArrayList<Box>()
+
     /** The rectangles to cover from the scans since the last reset. */
     @Volatile var covers: List<Rect> = emptyList()
         private set
 
     /** Forget covers: the screen content changed (scroll / new window). */
     fun reset() {
-        synchronized(seen) { seen.clear() }
+        synchronized(seen) { seen.clear(); flaggedVideos.clear() }
         covers = emptyList()
     }
 
@@ -63,16 +68,18 @@ class PersonScanner(private val onCovers: (List<Rect>) -> Unit) {
             val image = InputImage.fromBitmap(shot, 0)
             detector.process(image)
                 .addOnSuccessListener { faces ->
+                    val faceBoxes = faces.map { val b = it.boundingBox; Box(b.left, b.top, b.right, b.bottom) }
+                    val surfaces = videoSurfaces.map { Box(it.left, it.top, it.right, it.bottom) }
                     val out = synchronized(seen) {
                         lastScreen = Box(0, 0, w, h)
-                        // Add any newly-seen faces (deduped), keep the rest. A frame
-                        // with no faces (e.g. all already covered) shrinks nothing.
-                        for (f in faces) {
-                            val b = f.boundingBox
-                            val box = Box(b.left, b.top, b.right, b.bottom)
-                            if (seen.none { near(it, box) }) seen.add(box)
-                        }
-                        PersonCover.covers(seen, lastScreen).map { Rect(it.left, it.top, it.right, it.bottom) }
+                        // Still images: accumulate faces (deduped); a frame with no
+                        // faces shrinks nothing, so a covered person stays covered.
+                        for (box in faceBoxes) if (seen.none { near(it, box) }) seen.add(box)
+                        val people = PersonCover.covers(seen, lastScreen)
+                        // Moving video: a face inside a video surface covers the whole
+                        // surface, sticky until the surface leaves the screen.
+                        val videos = VideoCover.cover(faceBoxes, surfaces, flaggedVideos)
+                        (people + videos).map { Rect(it.left, it.top, it.right, it.bottom) }
                     }
                     if (out != covers) {
                         covers = out
