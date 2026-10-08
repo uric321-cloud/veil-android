@@ -226,6 +226,14 @@ class RuleStore private constructor(context: Context) {
         get() = prefs.getBoolean(K_BLUR_PEOPLE, true)
         set(v) = prefs.edit().putBoolean(K_BLUR_PEOPLE, v).apply()
 
+    /**
+     * Watch on-screen text for grooming / sextortion / self-harm / bullying and
+     * alert the admin with the CATEGORY only (never the message). On by default.
+     */
+    var riskDetection: Boolean
+        get() = prefs.getBoolean(K_RISK_DETECT, true)
+        set(v) = prefs.edit().putBoolean(K_RISK_DETECT, v).apply()
+
     /** Cancel incoming notifications whose text contains blocked words. */
     var notificationFilter: Boolean
         get() = prefs.getBoolean(K_NOTIF_ON, true)
@@ -441,6 +449,7 @@ class RuleStore private constructor(context: Context) {
         const val K_CATALOG = "catalog_rules"
         const val K_IMAGE_STRICT = "image_strictness"
         const val K_BLUR_PEOPLE = "blur_people"
+        const val K_RISK_DETECT = "risk_detection"
         const val K_IMAGE_TOTAL = "images_covered_total"
 
         /** Keys whose change means the DNS matcher must be rebuilt. */

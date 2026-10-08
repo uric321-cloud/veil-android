@@ -95,8 +95,17 @@ export interface InstalledApp {
 /** Fixed, content-free block categories. Never a host, keyword or URL path. */
 export const BLOCK_CATEGORIES = ["adult", "bypass", "blocklist", "keyword", "url", "ai", "allowlist", "app", "other"] as const;
 
+export const RISK_CATEGORIES = ["grooming", "sextortion", "self_harm", "bullying"] as const;
+
+export const RISK_LABELS: Record<string, string> = {
+  grooming: "Possible grooming language was seen on this phone",
+  sextortion: "Possible sextortion / blackmail language was seen on this phone",
+  self_harm: "Possible self-harm language was seen on this phone",
+  bullying: "Possible bullying / harmful language was seen on this phone",
+};
+
 export interface DeviceEvent {
-  type: "block" | "tamper" | "text" | "image" | "info";
+  type: "block" | "tamper" | "text" | "image" | "info" | "risk";
   at: number;
   /** For block events: which generic category was blocked. No host/keyword/URL is ever stored. */
   category?: string;
@@ -433,6 +442,11 @@ export async function syncDevice(device: Device, input: SyncInput): Promise<Sync
       const detail = TAMPER_LABELS[e.rule ?? ""] ?? e.detail ?? "Tamper alert";
       device.alerts.unshift({ type: e.rule ?? "tamper", at: e.at, detail });
       newTamper.push({ rule: e.rule ?? "tamper", detail });
+    } else if (e.type === "risk") {
+      // Content-free: only the category reached the server. Alert like a tamper event.
+      const detail = RISK_LABELS[e.category ?? ""] ?? "A safety risk was seen on this phone";
+      device.alerts.unshift({ type: `risk:${e.category ?? "other"}`, at: e.at, detail });
+      newTamper.push({ rule: `risk_${e.category ?? "other"}`, detail });
     }
   }
   device.alerts = device.alerts.slice(0, MAX_ALERTS);
@@ -529,7 +543,7 @@ function cleanEvent(e: unknown): DeviceEvent | null {
   const o = (e && typeof e === "object" ? e : null) as Record<string, unknown> | null;
   if (!o) return null;
   const type = o.type;
-  if (type !== "block" && type !== "tamper" && type !== "text" && type !== "image" && type !== "info") return null;
+  if (type !== "block" && type !== "tamper" && type !== "text" && type !== "image" && type !== "info" && type !== "risk") return null;
   const at = Number(o.at);
   const count = Number.isFinite(Number(o.count)) ? Math.max(1, Math.min(100_000, Number(o.count))) : undefined;
   const base = { type, at: Number.isFinite(at) && at > 0 ? at : Date.now() } as DeviceEvent;
@@ -542,6 +556,10 @@ function cleanEvent(e: unknown): DeviceEvent | null {
   } else if (type === "tamper") {
     base.rule = str(o.rule, 120) || undefined;
     base.detail = str(o.detail, 300) || undefined;
+  } else if (type === "risk") {
+    // Content-free by construction: only a known risk-category code is kept.
+    const category = str(o.category, 20).toLowerCase();
+    base.category = (RISK_CATEGORIES as readonly string[]).includes(category) ? category : "other";
   } else if (type === "text" || type === "image") {
     base.count = count;
   } else {

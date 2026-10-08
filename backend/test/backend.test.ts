@@ -269,6 +269,8 @@ describe("pairing and sync", () => {
           // A phone may still send a host; the server must ignore it and store only the category.
           { type: "block", at: now - 1000, category: "adult", host: "bad.example", count: 3 },
           { type: "tamper", at: now, rule: "accessibility_off" },
+          // Risk detection is content-free: only the category reaches the server, no message text.
+          { type: "risk", at: now, category: "grooming", detail: "hey keep this our little secret" },
         ],
         requests: [{ localId: "r1", host: "school-portal.example", reason: "homework" }],
         unknownDomains: ["news.example", "NEWS.example", "not a domain"],
@@ -279,7 +281,11 @@ describe("pairing and sync", () => {
 
     const detail = await body(await call("GET", `/api/devices/${pair.deviceId}`, { cookie }));
     assert.equal(detail.device.status.deviceOwner, true);
-    assert.equal(detail.device.alerts[0].type, "accessibility_off");
+    // The risk event raised an admin alert, by category only, with no message text stored.
+    assert.ok(detail.device.alerts.some((a: { type: string }) => a.type === "risk:grooming"));
+    assert.equal(JSON.stringify(detail).includes("our little secret"), false);
+    assert.equal(detail.device.alerts[0].type, "risk:grooming");
+    assert.ok(detail.device.alerts.some((a: { type: string }) => a.type === "accessibility_off"));
     assert.equal(detail.requests.length, 1);
     assert.equal(detail.requests[0].status, "pending");
 

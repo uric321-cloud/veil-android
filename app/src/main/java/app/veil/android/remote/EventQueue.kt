@@ -92,6 +92,18 @@ object EventQueue {
         save()
     }
 
+    /**
+     * A risk category seen in on-screen text (grooming / sextortion / self-harm /
+     * bullying). Only the fixed category code is sent - NEVER the message text -
+     * so the admin is alerted without any content leaving the phone.
+     */
+    @Synchronized
+    fun risk(category: String) {
+        if (!enabled) return
+        add(JSONObject().put("type", "risk").put("at", System.currentTimeMillis()).put("category", category))
+        save()
+    }
+
     @Synchronized
     fun text(count: Long) {
         if (!enabled || count <= 0) return
