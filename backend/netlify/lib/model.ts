@@ -83,6 +83,17 @@ export interface Device {
   partnerEmail?: string;
   /** A private note the admin sealed to their own key; opaque to the server (zero-knowledge). */
   secureNote?: string;
+  /** Two-person rule: when on, loosening protection needs the partner's approval. */
+  twoPersonRule?: boolean;
+  /** A change held until the accountability partner approves it. */
+  pendingChange?: PendingChange;
+}
+
+export interface PendingChange {
+  kind: "config" | "disable_rule";
+  config?: DeviceConfig;
+  token: string;
+  at: number;
 }
 
 export interface InstalledApp {
@@ -659,13 +670,64 @@ export async function saveDevice(d: Device): Promise<void> {
 }
 
 export function publicDevice(d: Device) {
-  const { tokenHash: _t, recoveryHash: _r, ...rest } = d;
-  return { ...rest, online: Date.now() - d.lastSeen < 5 * 60_000, pendingConfig: d.appliedConfigVersion !== d.configVersion };
+  const { tokenHash: _t, recoveryHash: _r, pendingChange, ...rest } = d;
+  // Never expose the approval token; just whether a change is awaiting the partner.
+  const pendingApproval = pendingChange ? { kind: pendingChange.kind, at: pendingChange.at } : undefined;
+  return { ...rest, pendingApproval, online: Date.now() - d.lastSeen < 5 * 60_000, pendingConfig: d.appliedConfigVersion !== d.configVersion };
+}
+
+const STRICT_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, max: 3 };
+
+/** True if [next] weakens any content protection vs [cur] (what the two-person rule guards). */
+export function isLoosening(cur: DeviceConfig, next: DeviceConfig): boolean {
+  const c = cur.screen, n = next.screen;
+  if (c.images && !n.images) return true;
+  if (c.blurPeople && !n.blurPeople) return true;
+  if (c.riskDetection && !n.riskDetection) return true;
+  if ((STRICT_RANK[n.imageStrictness] ?? 1) < (STRICT_RANK[c.imageStrictness] ?? 1)) return true;
+  return false;
 }
 
 export async function updateConfig(device: Device, patch: unknown): Promise<Device> {
-  device.config = sanitizeConfig(patch, device.config);
+  const next = sanitizeConfig(patch, device.config);
+  // Two-person rule: a loosening change is held until the partner approves it.
+  // (With no partner to ask, it applies normally — the rule can't block forever.)
+  if (device.twoPersonRule && device.partnerEmail && isLoosening(device.config, next)) {
+    device.pendingChange = { kind: "config", config: next, token: id("appr"), at: Date.now() };
+    await saveDevice(device);
+    return device;
+  }
+  device.config = next;
   device.configVersion += 1;
+  await saveDevice(device);
+  return device;
+}
+
+/** Turn the two-person rule on (immediate) or off (needs partner approval if a partner is set). */
+export async function setTwoPersonRule(device: Device, on: boolean): Promise<Device> {
+  if (on) {
+    device.twoPersonRule = true;
+  } else if (device.twoPersonRule && device.partnerEmail) {
+    device.pendingChange = { kind: "disable_rule", token: id("appr"), at: Date.now() };
+  } else {
+    device.twoPersonRule = false;
+  }
+  await saveDevice(device);
+  return device;
+}
+
+/** Apply a change the partner approved, by its token. Returns the device, or null if the token is wrong. */
+export async function approvePendingChange(deviceId: string, token: string): Promise<Device | null> {
+  const device = await kv().get<Device>(K.device(deviceId));
+  if (!device || !device.pendingChange || device.pendingChange.token !== token) return null;
+  const p = device.pendingChange;
+  if (p.kind === "config" && p.config) {
+    device.config = p.config;
+    device.configVersion += 1;
+  } else if (p.kind === "disable_rule") {
+    device.twoPersonRule = false;
+  }
+  device.pendingChange = undefined;
   await saveDevice(device);
   return device;
 }

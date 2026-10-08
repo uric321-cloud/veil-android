@@ -561,7 +561,23 @@ function viewOverview(root, data) {
       button("Save", async () => {
         try { await api("POST", `/api/devices/${d.id}/partner`, { email: partnerInput.value.trim() }); toast(partnerInput.value.trim() ? "Partner saved." : "Partner removed."); }
         catch (e) { toast(e.message); }
-      })));
+      })),
+    h("hr"),
+    h("div", { class: "spread" },
+      h("div", {}, h("strong", {}, "Two-person rule"),
+        h("p", { class: "muted small", style: "margin:2px 0 0" },
+          d.twoPersonRule
+            ? "On. Loosening protection (or turning this off) needs the partner to approve by email."
+            : "Off. Turn on so weakening protection requires the partner's approval. Needs a partner email.")),
+      button(d.twoPersonRule ? "Turn off" : "Turn on", async () => {
+        try {
+          const r = await api("POST", `/api/devices/${d.id}/two-person`, { on: !d.twoPersonRule });
+          toast(r.device.pendingApproval ? "Sent to your partner to approve." : (r.device.twoPersonRule ? "Two-person rule on." : "Two-person rule off."));
+          route();
+        } catch (e) { toast(e.message); }
+      }, d.twoPersonRule ? "ghost" : "")),
+    d.pendingApproval ? h("p", { class: "muted small", style: "color:var(--warn,#b7791f)" },
+      "Waiting for your partner to approve a change by email.") : null);
 
   add(root, h("div", { class: "grid" }, h("div", {}, status, actions, partner, secureNoteCard(data)), h("div", {}, alerts, report)));
 }
