@@ -295,6 +295,10 @@ describe("pairing and sync", () => {
     assert.equal(activity.stats.topCategories[0].category, "adult");
     assert.equal(activity.stats.topCategories[0].count, 3);
     assert.equal(JSON.stringify(activity).includes("bad.example"), false);
+    // Accountability: the risk event is aggregated by category (content-free) and
+    // resets the clean streak (an adult block + a risk happened just now → 0 days).
+    assert.equal(activity.stats.risks[0].category, "grooming");
+    assert.equal(activity.stats.cleanStreakDays, 0);
 
     // A retried sync with the same request id does not duplicate it.
     await call("POST", "/api/device/sync", { token: pair.token, csrf: false, body: { requests: [{ localId: "r1", host: "school-portal.example" }] } });

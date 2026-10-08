@@ -816,7 +816,16 @@ async function viewActivity(root, data) {
     // Shift UTC hours to the admin's local time for display.
     const offset = -new Date().getTimezoneOffset() / 60;
     const local = st.blocksByUtcHour.map((_, i) => st.blocksByUtcHour[((i - offset) % 24 + 24) % 24]);
-    fill(body, 
+    const streak = h("section", { class: "card" }, h("h2", {}, "Clean streak"),
+      h("p", { class: "code" }, st.cleanStreakDays == null ? "✓" : st.cleanStreakDays),
+      h("p", { class: "muted" }, st.cleanStreakDays == null
+        ? "No blocked or flagged activity in this period."
+        : `day${st.cleanStreakDays === 1 ? "" : "s"} since the last blocked or flagged activity.`));
+    fill(body,
+      (st.risks && st.risks.length) ? h("section", { class: "card warn" }, h("h2", {}, "Safety risks seen"),
+        h("p", { class: "muted small" }, "Category only — the message is never seen or stored."),
+        h("ul", { class: "list" }, st.risks.map((x) => h("li", { class: "spread" }, h("span", {}, x.label), h("strong", {}, x.count))))) : null,
+      streak,
       h("div", { class: "grid" },
         h("section", { class: "card" }, h("h2", {}, "Blocks by category"),
           h("p", { class: "code" }, st.totalBlocks),

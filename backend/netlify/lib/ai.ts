@@ -2,9 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeConfig } from "./config.ts";
 import {
   appendChat, decideRequest, finishJob, getChat, getClassification, getRequest, getSummary, listEvents, listRequests,
-  getDeviceForTest, ownedDevice, recordAppClassification, saveClassifications, saveRequest, saveSummary, type AiReview, type AppDecision,
+  getDeviceForTest, ownedDevice, recordAppClassification, RISK_LABELS, saveClassifications, saveRequest, saveSummary, type AiReview, type AppDecision,
   type Classification, type Device, type DeviceEvent, type Job, type Summary, type UnblockRequest,
 } from "./model.ts";
+
+const DAY_MS = 86_400_000;
+// Categories that count as a "slip" for the clean-streak (content risk, not app/allow noise).
+const SLIP_CATEGORIES = new Set(["adult", "url", "ai", "keyword", "blocklist", "bypass"]);
 import { emailPartner, notifyAdmin } from "./notify.ts";
 import { kv } from "./store.ts";
 
@@ -260,6 +264,8 @@ export function aggregateEvents(events: DeviceEvent[]) {
   let imagesCovered = 0;
   let totalBlocks = 0;
   const tamper: { at: string; rule: string; detail: string }[] = [];
+  const risksByCategory = new Map<string, number>();
+  let lastSlipAt = 0; // most recent content-risk event (block of a risky category, or a risk event)
   for (const e of events) {
     const n = e.count ?? 1;
     if (e.type === "block") {
@@ -268,12 +274,17 @@ export function aggregateEvents(events: DeviceEvent[]) {
       blocksByCategory.set(cat, (blocksByCategory.get(cat) ?? 0) + n);
       byHour[new Date(e.at).getUTCHours()] += n;
       totalBlocks += n;
+      if (SLIP_CATEGORIES.has(cat)) lastSlipAt = Math.max(lastSlipAt, e.at);
     } else if (e.type === "text") {
       textCovered += n;
     } else if (e.type === "image") {
       imagesCovered += n;
     } else if (e.type === "tamper") {
       tamper.push({ at: new Date(e.at).toISOString(), rule: e.rule ?? "", detail: e.detail ?? "" });
+    } else if (e.type === "risk") {
+      const cat = e.category ?? "other";
+      risksByCategory.set(cat, (risksByCategory.get(cat) ?? 0) + n);
+      lastSlipAt = Math.max(lastSlipAt, e.at);
     }
   }
   return {
@@ -284,6 +295,11 @@ export function aggregateEvents(events: DeviceEvent[]) {
     textCovered,
     imagesCovered,
     tamper: tamper.slice(0, 50),
+    // Accountability: risk categories seen (content-free) and the clean streak.
+    risks: [...risksByCategory].sort((a, b) => b[1] - a[1])
+      .map(([category, count]) => ({ category, label: RISK_LABELS[category] ?? category, count })),
+    lastSlipAt: lastSlipAt || null,
+    cleanStreakDays: lastSlipAt ? Math.floor((Date.now() - lastSlipAt) / DAY_MS) : null,
   };
 }
 
