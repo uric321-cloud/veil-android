@@ -32,12 +32,22 @@ class PersonScanner(private val onCovers: (List<Rect>) -> Unit) {
 
     @Volatile private var busy = false
 
-    /** The rectangles to cover from the last scan. */
+    /** Face boxes seen since the last reset. Covers are STICKY: once a person is
+     *  covered, our own cover bar hides that face from the next screenshot, so the
+     *  detector would see "no face" and uncover it, causing a cover/uncover flicker.
+     *  Keeping the boxes until the screen scrolls or changes stops that loop. */
+    private val seen = ArrayList<Box>()
+    @Volatile private var lastScreen = Box(0, 0, 0, 0)
+
+    /** The rectangles to cover from the scans since the last reset. */
     @Volatile var covers: List<Rect> = emptyList()
         private set
 
-    /** Forget covers: the screen content changed. */
-    fun reset() { covers = emptyList() }
+    /** Forget covers: the screen content changed (scroll / new window). */
+    fun reset() {
+        synchronized(seen) { seen.clear() }
+        covers = emptyList()
+    }
 
     /**
      * Cover every person in [shot] (a screenshot). Owns [shot] and recycles it
@@ -53,10 +63,21 @@ class PersonScanner(private val onCovers: (List<Rect>) -> Unit) {
             val image = InputImage.fromBitmap(shot, 0)
             detector.process(image)
                 .addOnSuccessListener { faces ->
-                    val boxes = faces.map { val b = it.boundingBox; Box(b.left, b.top, b.right, b.bottom) }
-                    val out = PersonCover.covers(boxes, Box(0, 0, w, h)).map { Rect(it.left, it.top, it.right, it.bottom) }
-                    covers = out
-                    onCovers(out)
+                    val out = synchronized(seen) {
+                        lastScreen = Box(0, 0, w, h)
+                        // Add any newly-seen faces (deduped), keep the rest. A frame
+                        // with no faces (e.g. all already covered) shrinks nothing.
+                        for (f in faces) {
+                            val b = f.boundingBox
+                            val box = Box(b.left, b.top, b.right, b.bottom)
+                            if (seen.none { near(it, box) }) seen.add(box)
+                        }
+                        PersonCover.covers(seen, lastScreen).map { Rect(it.left, it.top, it.right, it.bottom) }
+                    }
+                    if (out != covers) {
+                        covers = out
+                        onCovers(out)
+                    }
                 }
                 .addOnFailureListener { VeilLog.w("Face detect failed: ${it.message}") }
                 .addOnCompleteListener {
@@ -68,6 +89,14 @@ class PersonScanner(private val onCovers: (List<Rect>) -> Unit) {
             shot.recycle()
             VeilLog.w("Face detect error: ${t.message}")
         }
+    }
+
+    /** Two face boxes are "the same face" if their centres are within half a face
+     *  width/height of each other — so frame-to-frame jitter doesn't pile up. */
+    private fun near(a: Box, b: Box): Boolean {
+        val dx = kotlin.math.abs(a.centerX - b.centerX)
+        val dy = kotlin.math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2)
+        return dx <= (a.width + b.width) / 4 && dy <= (a.height + b.height) / 4
     }
 
     fun close() {
