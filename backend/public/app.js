@@ -561,7 +561,23 @@ function viewOverview(root, data) {
       button("Save", async () => {
         try { await api("POST", `/api/devices/${d.id}/partner`, { email: partnerInput.value.trim() }); toast(partnerInput.value.trim() ? "Partner saved." : "Partner removed."); }
         catch (e) { toast(e.message); }
-      })));
+      })),
+    h("hr"),
+    h("div", { class: "spread" },
+      h("div", {}, h("strong", {}, "Two-person rule"),
+        h("p", { class: "muted small", style: "margin:2px 0 0" },
+          d.twoPersonRule
+            ? "On. Loosening protection (or turning this off) needs the partner to approve by email."
+            : "Off. Turn on so weakening protection requires the partner's approval. Needs a partner email.")),
+      button(d.twoPersonRule ? "Turn off" : "Turn on", async () => {
+        try {
+          const r = await api("POST", `/api/devices/${d.id}/two-person`, { on: !d.twoPersonRule });
+          toast(r.device.pendingApproval ? "Sent to your partner to approve." : (r.device.twoPersonRule ? "Two-person rule on." : "Two-person rule off."));
+          route();
+        } catch (e) { toast(e.message); }
+      }, d.twoPersonRule ? "ghost" : "")),
+    d.pendingApproval ? h("p", { class: "muted small", style: "color:var(--warn,#b7791f)" },
+      "Waiting for your partner to approve a change by email.") : null);
 
   add(root, h("div", { class: "grid" }, h("div", {}, status, actions, partner, secureNoteCard(data)), h("div", {}, alerts, report)));
 }
@@ -816,7 +832,16 @@ async function viewActivity(root, data) {
     // Shift UTC hours to the admin's local time for display.
     const offset = -new Date().getTimezoneOffset() / 60;
     const local = st.blocksByUtcHour.map((_, i) => st.blocksByUtcHour[((i - offset) % 24 + 24) % 24]);
-    fill(body, 
+    const streak = h("section", { class: "card" }, h("h2", {}, "Clean streak"),
+      h("p", { class: "code" }, st.cleanStreakDays == null ? "✓" : st.cleanStreakDays),
+      h("p", { class: "muted" }, st.cleanStreakDays == null
+        ? "No blocked or flagged activity in this period."
+        : `day${st.cleanStreakDays === 1 ? "" : "s"} since the last blocked or flagged activity.`));
+    fill(body,
+      (st.risks && st.risks.length) ? h("section", { class: "card warn" }, h("h2", {}, "Safety risks seen"),
+        h("p", { class: "muted small" }, "Category only — the message is never seen or stored."),
+        h("ul", { class: "list" }, st.risks.map((x) => h("li", { class: "spread" }, h("span", {}, x.label), h("strong", {}, x.count))))) : null,
+      streak,
       h("div", { class: "grid" },
         h("section", { class: "card" }, h("h2", {}, "Blocks by category"),
           h("p", { class: "code" }, st.totalBlocks),

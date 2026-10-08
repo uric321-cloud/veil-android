@@ -7,7 +7,7 @@ import { HttpError, bearer, cookie, json, readJson, str } from "../lib/http.ts";
 import {
   addCoAdmin, adminCount, adminKeys, appendChat, authDevice, clearAlerts, clearChat, createAdmin, createJob, createPairingCode, decideRequest, deviceOwnerPublicKey, removeCoAdmin, setAdminKeys, setAdminSubscription, setDeviceNote,
   getAiBlocklist, getChat, getJob, getSummary, internalSecret, listDevices, listEvents, listRequests, login, logout,
-  ownedDevice, pairDevice, publicAdmin, publicDevice, queueCommand, renameDevice, sessionAdmin, setPartnerEmail, syncDevice,
+  approvePendingChange, ownedDevice, pairDevice, publicAdmin, publicDevice, queueCommand, renameDevice, sessionAdmin, setPartnerEmail, setTwoPersonRule, syncDevice,
   takeRecoveryCode, updateConfig, type Admin, type Job,
 } from "../lib/model.ts";
 
@@ -230,8 +230,38 @@ const routes: [string, RegExp, Handler][] = [
   }],
   ["PATCH", /^\/api\/devices\/([\w-]+)\/config$/, async (req, [id]) => {
     const admin = await requireAdmin(req);
-    const d = await updateConfig(await ownedDevice(admin.id, id), await readJson(req));
+    const before = await ownedDevice(admin.id, id);
+    const had = before.pendingChange?.token;
+    const d = await updateConfig(before, await readJson(req));
+    // If the two-person rule held this change, email the partner an approval link.
+    if (d.pendingChange && d.pendingChange.token !== had && d.partnerEmail) {
+      const origin = (env("URL") ?? new URL(req.url).origin).replace(/\/$/, "");
+      await emailPartner(d.partnerEmail, `Approval needed for ${d.name}`,
+        `A change that loosens protection on ${d.name} is waiting for your approval. ` +
+        `If you approve, open: ${origin}/api/approve/${d.id}/${d.pendingChange.token}\nIf you did not expect this, ignore this email and the change will not apply.`);
+    }
     return json({ device: publicDevice(d) });
+  }],
+  ["POST", /^\/api\/devices\/([\w-]+)\/two-person$/, async (req, [id]) => {
+    const admin = await requireAdmin(req);
+    const body = await readJson<{ on?: boolean }>(req);
+    const before = await ownedDevice(admin.id, id);
+    const had = before.pendingChange?.token;
+    const d = await setTwoPersonRule(before, !!body.on);
+    if (d.pendingChange && d.pendingChange.token !== had && d.partnerEmail) {
+      const origin = (env("URL") ?? new URL(req.url).origin).replace(/\/$/, "");
+      await emailPartner(d.partnerEmail, `Approval needed for ${d.name}`,
+        `A request to TURN OFF the two-person accountability rule on ${d.name} is waiting for your approval. ` +
+        `If you approve, open: ${origin}/api/approve/${d.id}/${d.pendingChange.token}\nIf you did not expect this, ignore this email.`);
+    }
+    return json({ device: publicDevice(d) });
+  }],
+  // Partner approval link (no login): applies the held change for this token.
+  ["GET", /^\/api\/approve\/([\w-]+)\/([\w-]+)$/, async (_req, [deviceId, token]) => {
+    const d = await approvePendingChange(deviceId, token);
+    const msg = d ? "Approved. The change has been applied." : "This approval link is no longer valid.";
+    return new Response(`<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><body style="font-family:system-ui;padding:40px;max-width:30rem;margin:auto"><h2>VEIL</h2><p>${msg}</p></body>`,
+      { status: d ? 200 : 410, headers: { "content-type": "text/html; charset=utf-8" } });
   }],
   ["POST", /^\/api\/devices\/([\w-]+)\/partner$/, async (req, [id]) => {
     const admin = await requireAdmin(req);

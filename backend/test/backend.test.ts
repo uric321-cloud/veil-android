@@ -295,6 +295,10 @@ describe("pairing and sync", () => {
     assert.equal(activity.stats.topCategories[0].category, "adult");
     assert.equal(activity.stats.topCategories[0].count, 3);
     assert.equal(JSON.stringify(activity).includes("bad.example"), false);
+    // Accountability: the risk event is aggregated by category (content-free) and
+    // resets the clean streak (an adult block + a risk happened just now → 0 days).
+    assert.equal(activity.stats.risks[0].category, "grooming");
+    assert.equal(activity.stats.cleanStreakDays, 0);
 
     // A retried sync with the same request id does not duplicate it.
     await call("POST", "/api/device/sync", { token: pair.token, csrf: false, body: { requests: [{ localId: "r1", host: "school-portal.example" }] } });
@@ -453,5 +457,37 @@ describe("billing (Stripe scaffold)", () => {
     const { billingConfigured, availablePlans } = await import("../netlify/lib/billing.ts");
     assert.equal(billingConfigured(), false);
     assert.deepEqual(availablePlans(), []);
+  });
+});
+
+describe("two-person rule (accountability)", () => {
+  it("holds a loosening change until the partner approves it", async () => {
+    const { cookie, pair } = await signupAndPair();
+    await call("POST", `/api/devices/${pair.deviceId}/partner`, { cookie, body: { email: "ally@example.com" } });
+    await call("POST", `/api/devices/${pair.deviceId}/two-person`, { cookie, body: { on: true } });
+
+    // Turning image blur off loosens protection -> held, not applied, token never exposed.
+    const res = await body(await call("PATCH", `/api/devices/${pair.deviceId}/config`, { cookie, body: { screen: { images: false } } }));
+    assert.equal(res.device.pendingApproval.kind, "config");
+    assert.equal(res.device.config.screen.images, true);
+    assert.equal(JSON.stringify(res).includes("appr_"), false);
+
+    // The partner approves with the real token -> the change applies.
+    const token = (await model.getDeviceForTest(pair.deviceId))!.pendingChange!.token;
+    const approve = await call("GET", `/api/approve/${pair.deviceId}/${token}`, { csrf: false });
+    assert.equal(approve.status, 200);
+    const after = await body(await call("GET", `/api/devices/${pair.deviceId}`, { cookie }));
+    assert.equal(after.device.config.screen.images, false);
+    assert.equal(after.device.pendingApproval, undefined);
+
+    // A stale/wrong token is rejected.
+    assert.equal((await call("GET", `/api/approve/${pair.deviceId}/appr_bogus`, { csrf: false })).status, 410);
+  });
+
+  it("applies a loosening change immediately when the rule is off", async () => {
+    const { cookie, pair } = await signupAndPair();
+    const res = await body(await call("PATCH", `/api/devices/${pair.deviceId}/config`, { cookie, body: { screen: { images: false } } }));
+    assert.equal(res.device.config.screen.images, false);
+    assert.equal(res.device.pendingApproval, undefined);
   });
 });
