@@ -1,0 +1,11 @@
+services:
+  sam-rfp-radar:
+    build: .
+    container_name: sam-rfp-radar
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_PATH: /app/data/opportunities.sqlite
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro

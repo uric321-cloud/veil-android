@@ -1,0 +1,19 @@
+# systemd unit for a VPS / home server install.
+#   sudo cp deploy/sam-rfp-radar.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sam-rfp-radar
+[Unit]
+Description=SAM.gov RFP Radar agents
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=samradar
+WorkingDirectory=/opt/sam-rfp-agents
+EnvironmentFile=/opt/sam-rfp-agents/.env
+ExecStart=/opt/sam-rfp-agents/.venv/bin/python -m samagents run
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,90 @@
+# Runs the SAM.gov RFP Radar agents on GitHub's schedulers so no server is
+# needed. The SQLite database is kept on the `sam-rfp-radar-data` branch and
+# committed back after every run.
+#
+# Required repository secrets: SAM_API_KEY, ANTHROPIC_API_KEY, EMAIL_FROM,
+# EMAIL_TO, and either SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD or
+# RESEND_API_KEY (+ EMAIL_PROVIDER=resend as a repository variable).
+name: SAM.gov RFP Radar
+
+on:
+  schedule:
+    # Every 6 hours. GitHub cron is UTC and can run a few minutes late.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force_report:
+        description: "Send the daily digest now even if nothing is new"
+        type: boolean
+        default: false
+
+concurrency:
+  group: sam-rfp-radar
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sam-rfp-agents
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore database branch
+        run: |
+          git fetch origin sam-rfp-radar-data:sam-rfp-radar-data || true
+          mkdir -p data
+          if git rev-parse --verify sam-rfp-radar-data >/dev/null 2>&1; then
+            git show sam-rfp-radar-data:opportunities.sqlite > data/opportunities.sqlite || true
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sam-rfp-agents/requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Discover, analyze, alert, and send the daily digest when due
+        env:
+          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'smtp' }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DATABASE_PATH: data/opportunities.sqlite
+        run: |
+          python -m samagents --env /dev/null once --report-if-due
+          if [ "${{ github.event.inputs.force_report }}" = "true" ]; then
+            python -m samagents --env /dev/null report --force
+          fi
+          python -m samagents --env /dev/null status
+
+      - name: Save database branch
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE"
+          TMP=$(mktemp -d)
+          cp sam-rfp-agents/data/opportunities.sqlite "$TMP/"
+          git config user.name "sam-rfp-radar[bot]"
+          git config user.email "sam-rfp-radar@users.noreply.github.com"
+          if git rev-parse --verify sam-rfp-radar-data >/dev/null 2>&1; then
+            git checkout sam-rfp-radar-data
+          else
+            git checkout --orphan sam-rfp-radar-data
+            git rm -rf --quiet . || true
+          fi
+          cp "$TMP/opportunities.sqlite" opportunities.sqlite
+          git add opportunities.sqlite
+          git commit -m "radar run $(date -u +%Y-%m-%dT%H:%MZ)" || echo "no changes"
+          git push origin sam-rfp-radar-data

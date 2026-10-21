@@ -1,0 +1,138 @@
+# SAM.gov RFP Radar - agent configuration.
+# Secrets (API keys, SMTP password) live in .env, never here.
+
+sam:
+  # Personal API keys get 10 requests/day with no SAM.gov role and 1,000/day
+  # once your account holds a role on a registered entity. Set this to the
+  # tier your key actually has; the agents never exceed it.
+  daily_request_budget: 10
+  # Notice types to pull: o=solicitation, k=combined synopsis/solicitation,
+  # p=presolicitation, r=sources sought, s=special notice, a=award, u=J&A.
+  notice_types: [o, k, p, r]
+  # How many days back each discovery run looks. 2 covers a missed run.
+  lookback_days: 2
+  page_size: 1000
+  max_pages_per_run: 2
+  # Pull the full notice text for candidates (one API request per notice).
+  enrich_descriptions: true
+  enrich_max_per_run: 4
+  # sam.gov's public website endpoint returns notice text without an API key.
+  # It is undocumented, so it is used best-effort and never counted on.
+  site_fallback: true
+
+schedule:
+  discovery_every_hours: 6
+  report_time_local: "07:00"
+  timezone: America/New_York
+  # Send an immediate email for anything the analyst scores at/above this.
+  # 0 disables instant alerts.
+  instant_alert_min_score: 85
+
+filters:
+  # Keep notices whose Product Service Code (PSC) is a product code (numeric
+  # prefix). Service codes start with a letter: Y/Z construction, R services,
+  # J maintenance, U training, etc. and are dropped.
+  product_only: true
+  # Construction (23xxxx) and staffing/temporary help NAICS are never products.
+  exclude_naics_prefixes: ["23", "5613", "5617"]
+  exclude_psc_prefixes: ["Y", "Z", "J", "N", "M", "S", "R", "U", "V", "W", "X", "C", "E", "F", "G", "H", "P", "Q", "T"]
+  exclude_title_keywords:
+    - construction
+    - renovation
+    - demolition
+    - roofing
+    - paving
+    - hvac repair
+    - labor services
+    - staffing
+    - temporary help
+    - janitorial services
+    - custodial services
+    - maintenance services
+    - installation services
+    - engineering services
+    - consulting
+    - lease of
+  # A notice with no PSC, or a service PSC, is rescued as a candidate when its
+  # title clearly buys goods.
+  include_title_keywords:
+    - purchase of
+    - supply of
+    - procurement of
+    - brand name or equal
+    - apparel
+    - uniform
+    - clothing
+    - boots
+    - footwear
+    - backpack
+    - tent
+    - sleeping bag
+    - gloves
+    - hygiene
+    - toiletries
+    - shampoo
+    - soap
+    - sunscreen
+    - first aid
+    - gear
+    - jacket
+    - parka
+    - t-shirt
+    - socks
+    - hat
+    - sunglasses
+    - watch
+    - bag
+    - cooler
+    - flashlight
+    - headlamp
+    - knife
+    - multi-tool
+
+# Categories drive the report layout and give the analyst a vocabulary.
+# Matching: PSC prefix first, then title keywords. First match wins.
+categories:
+  - name: Health & Beauty Aids
+    psc_prefixes: ["85", "6508", "6510", "6515", "6530", "6532", "6540", "6545"]
+    keywords: [hygiene, toiletr, shampoo, soap, lotion, sunscreen, deodorant, razor, toothbrush, toothpaste, first aid, cosmetic, skin care, feminine, wipes, hand sanitizer, lip balm]
+  - name: Clothing & Footwear
+    psc_prefixes: ["8405", "8410", "8415", "8420", "8425", "8430", "8435", "8440", "8445", "8450", "8475"]
+    keywords: [apparel, uniform, clothing, garment, boots, footwear, shoes, jacket, parka, trousers, pants, shirt, t-shirt, polo, socks, underwear, gloves, hat, cap, beanie, coat, fleece, hoodie, rain gear, vest]
+  - name: Outdoor & Tactical Gear
+    psc_prefixes: ["8465", "8340", "7810", "7830", "4240", "6230", "8470", "5110", "5120"]
+    keywords: [backpack, rucksack, tent, sleeping bag, sleeping pad, tarp, hydration, canteen, cooler, camp, hiking, climbing, rope, carabiner, flashlight, headlamp, lantern, knife, multi-tool, binocular, compass, gps, survival, tactical, plate carrier, holster, pouch, duffel, kayak, paddle, fishing, hunting, archery, bike, bicycle, helmet, goggles]
+  - name: Accessories & Personal Items
+    psc_prefixes: ["8455", "8460", "8345", "6645", "6650", "7720"]
+    keywords: [sunglasses, eyewear, watch, wallet, belt, luggage, suitcase, bag, tote, umbrella, lanyard, badge, insignia, patch, pin, keychain, flag, banner, promotional, giveaway, swag, branded]
+  - name: Household, Cleaning & Janitorial Supplies
+    psc_prefixes: ["72", "73", "79", "7520", "7530", "8540", "8520", "8530"]
+    keywords: [cleaning supplies, paper towel, toilet paper, trash bag, detergent, mop, broom, towels, linens, bedding, blanket, pillow, mattress, kitchen, cutlery, tableware, cookware, appliance]
+  - name: Food & Subsistence
+    psc_prefixes: ["89"]
+    keywords: [food, snack, beverage, water bottle, bottled water, meals, mre, ration, coffee, nutrition]
+  - name: Other Merchandise
+    psc_prefixes: []
+    keywords: []
+
+analyst:
+  model: claude-opus-5-5
+  effort: low
+  max_per_run: 60
+  # Only opportunities the analyst scores at/above this reach the daily report.
+  min_fit_score_for_report: 40
+  # Describe the business so the analyst scores fit correctly.
+  business_profile: >
+    We are a small-business supplier and distributor of merchandise: health and
+    beauty aids (HBA), personal hygiene and toiletries, outdoor and tactical
+    gear, camping equipment, clothing, footwear, uniforms, accessories,
+    promotional items, household and janitorial supplies, and general consumer
+    goods. We source from brand manufacturers and wholesalers and can meet
+    brand-name-or-equal, Berry Amendment and TAA requirements on request. We do
+    NOT perform construction, installation, labor, staffing, maintenance,
+    engineering or other services.
+
+email:
+  subject_prefix: "[SAM.gov RFP Radar]"
+  # Attach a CSV of the report rows to each daily email.
+  attach_csv: true

@@ -1,0 +1,268 @@
+"""Reporter agent: turns analyzed opportunities into an email digest."""
+
+from __future__ import annotations
+
+import csv
+import html
+import io
+import json
+import logging
+import smtplib
+from datetime import datetime
+from email.message import EmailMessage
+from typing import Any, Callable, Iterable
+from zoneinfo import ZoneInfo
+
+import requests
+
+from ..config import EmailSettings, Settings
+from ..db import Database
+
+log = logging.getLogger(__name__)
+
+Sender = Callable[[EmailSettings, str, str, str, bytes | None], None]
+
+
+# ----------------------------------------------------------------- rendering
+def _e(v: Any) -> str:
+    return html.escape(str(v if v is not None else ""))
+
+
+def _fmt_deadline(value: str | None) -> str:
+    if not value:
+        return "not stated"
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.strftime("%b %d, %Y %I:%M %p %Z").replace(" 0", " ")
+    except ValueError:
+        return value
+
+
+def _loads(s: str | None, default: Any) -> Any:
+    try:
+        return json.loads(s) if s else default
+    except ValueError:
+        return default
+
+
+def _agency_short(path: str | None) -> str:
+    if not path:
+        return "n/a"
+    parts = [p.strip() for p in path.split(".") if p.strip()]
+    return " / ".join(parts[-2:]) if len(parts) > 1 else parts[0]
+
+
+def render_item_html(row: Any) -> str:
+    products = _loads(row["products_json"], [])
+    reqs = _loads(row["key_requirements_json"], [])
+    pocs = _loads(row["poc_json"], [])
+    score = int(row["fit_score"] or 0)
+    color = "#1a7f37" if score >= 80 else ("#9a6700" if score >= 60 else "#57606a")
+    prod_rows = "".join(
+        f"<tr><td style='padding:3px 8px 3px 0'>{_e(p.get('name'))}</td>"
+        f"<td style='padding:3px 8px'>{_e(p.get('quantity'))}</td>"
+        f"<td style='padding:3px 0;color:#57606a'>{_e(p.get('specs'))}</td></tr>"
+        for p in products
+    )
+    products_html = (
+        f"<table style='border-collapse:collapse;font-size:13px;margin:6px 0'>"
+        f"<tr style='color:#57606a;font-size:12px'><th align='left'>Product</th><th align='left'>Qty</th><th align='left'>Specs</th></tr>{prod_rows}</table>"
+        if prod_rows else ""
+    )
+    reqs_html = ("<ul style='margin:6px 0 6px 18px;padding:0;font-size:13px'>" +
+                 "".join(f"<li>{_e(r)}</li>" for r in reqs) + "</ul>") if reqs else ""
+    poc_html = "; ".join(
+        " ".join(x for x in [p.get("name"), p.get("email"), p.get("phone")] if x) for p in pocs
+    )
+    pop = ", ".join(x for x in [row["pop_city"], row["pop_state"], row["pop_country"]] if x) or row["delivery_location"] or "n/a"
+    return f"""
+<div style="border:1px solid #d0d7de;border-radius:8px;padding:14px 16px;margin:0 0 14px 0;background:#fff">
+  <div style="display:flex;justify-content:space-between;gap:12px">
+    <div style="font-size:16px;font-weight:600;line-height:1.3">
+      <a href="{_e(row['ui_link'])}" style="color:#0969da;text-decoration:none">{_e(row['title'])}</a>
+    </div>
+    <div style="white-space:nowrap;font-weight:700;color:{color}">Fit {score}/100</div>
+  </div>
+  <div style="font-size:12px;color:#57606a;margin:4px 0 8px 0">
+    {_e(_agency_short(row['agency_path']))} &middot; {_e(row['notice_type'])} &middot; Posted {_e(row['posted_date'])}
+    &middot; <b>Due {_e(_fmt_deadline(row['response_deadline']))}</b>
+  </div>
+  <div style="font-size:14px;line-height:1.45">{_e(row['summary'])}</div>
+  {products_html}
+  {reqs_html}
+  <div style="font-size:12px;color:#57606a;margin-top:6px">
+    Set-aside: {_e(row['set_aside'] or 'none')} &middot; NAICS {_e(row['naics_code'] or 'n/a')} &middot; PSC {_e(row['psc_code'] or 'n/a')}
+    &middot; Deliver to: {_e(pop)}<br>
+    Sol# {_e(row['solicitation_number'] or 'n/a')} &middot; POC: {_e(poc_html or 'see notice')}
+  </div>
+</div>"""
+
+
+def render_report_html(rows: list[Any], settings: Settings, title: str, intro: str) -> str:
+    by_cat: dict[str, list[Any]] = {}
+    for r in rows:
+        by_cat.setdefault(r["category"] or "Other Merchandise", []).append(r)
+    order = settings.category_names()
+    sections = []
+    for cat in sorted(by_cat, key=lambda c: order.index(c) if c in order else len(order)):
+        items = "".join(render_item_html(r) for r in by_cat[cat])
+        sections.append(f"<h2 style='font-size:17px;margin:22px 0 10px 0;color:#24292f'>{_e(cat)} ({len(by_cat[cat])})</h2>{items}")
+    body = "".join(sections) or "<p>No new matching opportunities.</p>"
+    return f"""<!doctype html><html><body style="margin:0;background:#f6f8fa;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#24292f">
+<div style="max-width:760px;margin:0 auto;padding:20px 16px">
+  <h1 style="font-size:21px;margin:0 0 4px 0">{_e(title)}</h1>
+  <p style="margin:0 0 16px 0;color:#57606a;font-size:13px">{_e(intro)}</p>
+  {body}
+  <p style="color:#8c959f;font-size:11px;margin-top:24px">Generated by SAM.gov RFP Radar. Scores and summaries are AI-generated; always read the notice before bidding.</p>
+</div></body></html>"""
+
+
+def render_report_text(rows: list[Any], title: str) -> str:
+    lines = [title, "=" * len(title), ""]
+    for r in rows:
+        lines += [
+            f"[{r['fit_score']}/100] {r['title']}",
+            f"  {_agency_short(r['agency_path'])} | {r['notice_type']} | due {_fmt_deadline(r['response_deadline'])}",
+            f"  {r['summary']}",
+        ]
+        for p in _loads(r["products_json"], []):
+            lines.append(f"   - {p.get('name')} {p.get('quantity') or ''} {p.get('specs') or ''}".rstrip())
+        lines += [f"  {r['ui_link']}", ""]
+    return "\n".join(lines)
+
+
+def render_csv(rows: Iterable[Any]) -> bytes:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["fit_score", "category", "title", "notice_type", "agency", "posted", "response_deadline",
+                "set_aside", "naics", "psc", "solicitation_number", "products", "summary", "link"])
+    for r in rows:
+        products = "; ".join(
+            " ".join(x for x in [p.get("name"), p.get("quantity"), p.get("specs")] if x)
+            for p in _loads(r["products_json"], [])
+        )
+        w.writerow([r["fit_score"], r["category"], r["title"], r["notice_type"], _agency_short(r["agency_path"]),
+                    r["posted_date"], r["response_deadline"], r["set_aside"], r["naics_code"], r["psc_code"],
+                    r["solicitation_number"], products, r["summary"], r["ui_link"]])
+    return buf.getvalue().encode("utf-8")
+
+
+# ------------------------------------------------------------------ delivery
+def send_smtp(email: EmailSettings, subject: str, html_body: str, text_body: str, csv_bytes: bytes | None) -> None:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = email.sender
+    msg["To"] = ", ".join(email.recipients)
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+    if csv_bytes:
+        msg.add_attachment(csv_bytes, maintype="text", subtype="csv",
+                           filename=f"sam-opportunities-{datetime.now():%Y-%m-%d}.csv")
+    with smtplib.SMTP(email.smtp_host, email.smtp_port, timeout=60) as smtp:
+        smtp.ehlo()
+        if email.smtp_port != 465:
+            smtp.starttls()
+        if email.smtp_user:
+            smtp.login(email.smtp_user, email.smtp_password)
+        smtp.send_message(msg)
+
+
+def send_resend(email: EmailSettings, subject: str, html_body: str, text_body: str, csv_bytes: bytes | None) -> None:
+    import base64
+
+    payload: dict[str, Any] = {
+        "from": email.sender, "to": email.recipients, "subject": subject, "html": html_body, "text": text_body,
+    }
+    if csv_bytes:
+        payload["attachments"] = [{
+            "filename": f"sam-opportunities-{datetime.now():%Y-%m-%d}.csv",
+            "content": base64.b64encode(csv_bytes).decode("ascii"),
+        }]
+    resp = requests.post("https://api.resend.com/emails", json=payload,
+                         headers={"Authorization": f"Bearer {email.resend_api_key}"}, timeout=60)
+    if resp.status_code >= 300:
+        raise RuntimeError(f"Resend returned {resp.status_code}: {resp.text[:300]}")
+
+
+def pick_sender(email: EmailSettings) -> Sender:
+    return send_resend if email.provider == "resend" else send_smtp
+
+
+# ---------------------------------------------------------------------- runs
+def _now_local(settings: Settings) -> datetime:
+    return datetime.now(ZoneInfo(settings.timezone))
+
+
+def send_daily(settings: Settings, db: Database, sender: Sender | None = None, force: bool = False) -> dict[str, Any]:
+    """Email every relevant opportunity not yet included in a daily digest."""
+    email = settings.email
+    min_score = int(settings.analyst.get("min_fit_score_for_report", 40))
+    rows = db.unreported("daily", min_score)
+    stats: dict[str, Any] = {"count": len(rows)}
+    if not rows and not force:
+        stats["skipped"] = "nothing new"
+        return stats
+    if not email.configured:
+        stats["skipped"] = "email not configured"
+        db.record_report("daily", [], "", [], "skipped", "email not configured")
+        return stats
+    now = _now_local(settings)
+    title = f"SAM.gov merchandise opportunities: {len(rows)} new ({now:%a %b %d, %Y})"
+    intro = (f"New solicitations, combined synopses, presolicitations and sources-sought notices that buy "
+             f"merchandise, scored {min_score}+ for fit. Sorted by fit inside each category.")
+    subject = f"{email.subject_prefix} {len(rows)} new merchandise opportunities ({now:%b %d})"
+    html_body = render_report_html(rows, settings, title, intro)
+    text_body = render_report_text(rows, title)
+    csv_bytes = render_csv(rows) if email.attach_csv and rows else None
+    sender = sender or pick_sender(email)
+    try:
+        sender(email, subject, html_body, text_body, csv_bytes)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("daily report failed")
+        db.record_report("daily", email.recipients, subject, [], "failed", str(exc)[:500])
+        stats["error"] = str(exc)
+        return stats
+    db.record_report("daily", email.recipients, subject, [r["notice_id"] for r in rows], "sent")
+    stats["sent"] = True
+    log.info("daily report sent: %d items to %s", len(rows), email.recipients)
+    return stats
+
+
+def send_alerts(settings: Settings, db: Database, sender: Sender | None = None) -> dict[str, Any]:
+    """Email high-fit opportunities immediately, once each."""
+    threshold = int(settings.schedule.get("instant_alert_min_score", 0) or 0)
+    if threshold <= 0:
+        return {"skipped": "alerts disabled"}
+    email = settings.email
+    rows = db.unreported("alert", threshold)
+    if not rows:
+        return {"count": 0}
+    if not email.configured:
+        return {"count": len(rows), "skipped": "email not configured"}
+    first = rows[0]["title"]
+    subject = f"{email.subject_prefix} HOT: {first[:70]}" + (f" (+{len(rows) - 1} more)" if len(rows) > 1 else "")
+    title = f"High-fit opportunity alert ({len(rows)})"
+    html_body = render_report_html(rows, settings, title, f"Scored {threshold}+ by the analyst. Act early.")
+    text_body = render_report_text(rows, title)
+    sender = sender or pick_sender(email)
+    try:
+        sender(email, subject, html_body, text_body, None)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("alert failed")
+        db.record_report("alert", email.recipients, subject, [], "failed", str(exc)[:500])
+        return {"count": len(rows), "error": str(exc)}
+    db.record_report("alert", email.recipients, subject, [r["notice_id"] for r in rows], "sent")
+    return {"count": len(rows), "sent": True}
+
+
+def daily_report_due(settings: Settings, db: Database, now: datetime | None = None) -> bool:
+    """True once per local day after report_time_local, until a daily report is sent."""
+    now = now or _now_local(settings)
+    hh, mm = (settings.schedule.get("report_time_local") or "07:00").split(":")
+    if (now.hour, now.minute) < (int(hh), int(mm)):
+        return False
+    last = db.last_report("daily")
+    if last is None:
+        return True
+    last_local = datetime.fromisoformat(last["sent_at"]).astimezone(now.tzinfo)
+    return last_local.date() < now.date()
