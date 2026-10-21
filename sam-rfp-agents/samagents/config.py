@@ -27,6 +27,7 @@ class EmailSettings:
     smtp_port: int
     smtp_user: str
     smtp_password: str
+    smtp_starttls: bool
     resend_api_key: str
     subject_prefix: str
     attach_csv: bool
@@ -109,6 +110,7 @@ def load_settings(config_path: str | os.PathLike | None = None, env_path: str | 
         smtp_port=int(os.environ.get("SMTP_PORT", "587") or 587),
         smtp_user=os.environ.get("SMTP_USER", ""),
         smtp_password=os.environ.get("SMTP_PASSWORD", ""),
+        smtp_starttls=os.environ.get("SMTP_STARTTLS", "true").lower() not in ("0", "false", "no"),
         resend_api_key=os.environ.get("RESEND_API_KEY", ""),
         subject_prefix=email_cfg.get("subject_prefix", "[SAM.gov RFP Radar]"),
         attach_csv=bool(email_cfg.get("attach_csv", True)),

@@ -160,7 +160,7 @@ def send_smtp(email: EmailSettings, subject: str, html_body: str, text_body: str
                            filename=f"sam-opportunities-{datetime.now():%Y-%m-%d}.csv")
     with smtplib.SMTP(email.smtp_host, email.smtp_port, timeout=60) as smtp:
         smtp.ehlo()
-        if email.smtp_port != 465:
+        if email.smtp_starttls and email.smtp_port != 465:
             smtp.starttls()
         if email.smtp_user:
             smtp.login(email.smtp_user, email.smtp_password)

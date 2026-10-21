@@ -23,11 +23,17 @@ from .db import Database
 
 log = logging.getLogger(__name__)
 
-SEARCH_URL = "https://api.sam.gov/opportunities/v2/search"
-DESCRIPTION_URL = "https://api.sam.gov/prod/opportunities/v1/noticedesc"
+import os
+
+# Base URLs can be overridden (SAM_API_BASE / SAM_SITE_BASE) to point the
+# agents at a local stand-in during integration tests.
+API_BASE = os.environ.get("SAM_API_BASE", "https://api.sam.gov").rstrip("/")
+SITE_BASE = os.environ.get("SAM_SITE_BASE", "https://sam.gov").rstrip("/")
+SEARCH_URL = f"{API_BASE}/opportunities/v2/search"
+DESCRIPTION_URL = f"{API_BASE}/prod/opportunities/v1/noticedesc"
 # sam.gov's own front-end endpoint. Undocumented: used only as a best-effort,
 # key-free way to read notice text. Any failure is swallowed.
-SITE_OPP_URL = "https://sam.gov/api/prod/opps/v2/opportunities/{notice_id}"
+SITE_OPP_URL = SITE_BASE + "/api/prod/opps/v2/opportunities/{notice_id}"
 USER_AGENT = "sam-rfp-radar/0.1 (+https://github.com/uric321-cloud/veil-android)"
 
 
